@@ -30,8 +30,8 @@
   "license": "ISC",
   "description": "MCP server for probe CLI",
   "dependencies": {
-    "@buger/probe": "*",
-    "@modelcontextprotocol/sdk": "^1.6.0",
+    "@buger/probe": "file:../npm",
+    "@modelcontextprotocol/sdk": "1.7.0",
     "axios": "^1.6.0",
     "fs-extra": "^11.1.1",
     "tar": "^6.2.0"

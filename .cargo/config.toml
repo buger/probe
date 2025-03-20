@@ -1,0 +1,10 @@
+# Target-specific overrides for Windows MSVC
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-args=/DEBUG:NONE /NOLOGO"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-args=/DEBUG:NONE /NOLOGO"]
+
+# Configuration for Windows builds
+[target.'cfg(target_os = "windows")']
+# General Windows configuration

@@ -12,15 +12,114 @@ import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
-// Import the probe package with type declarations
-// @ts-ignore - Ignore missing type declarations for @buger/probe
-import { search, query, extract, getBinaryPath, setBinaryPath } from '@buger/probe';
+import { existsSync } from 'fs';
+
+// Set up __filename and __dirname (needed for ESM modules)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Get the project root directory
+const projectRoot = path.resolve(__dirname, '..', '..');
+
+// Import the probe package from local npm module instead of the online NPM package
+// @ts-ignore - Ignore missing type declarations for local npm module
+import { search, query, extract, getBinaryPath, setBinaryPath } from '../../npm/src/index.js';
 
 const execAsync = promisify(exec);
 
-// Get the package.json to determine the version
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/**
+ * Ensures the probe binary exists and is executable
+ * @returns Path to the probe binary
+ */
+async function ensureProbeBinary(): Promise<string> {
+  const isWindows = process.platform === 'win32';
+  const binaryName = isWindows ? 'probe.exe' : 'probe';
+  
+  // Check multiple locations for the binary
+  const possibleBinaryPaths = [
+    path.join(projectRoot, 'npm', 'bin', binaryName),                     // Local npm module
+    path.join(projectRoot, 'target', 'release', binaryName),             // Local Rust build (release)
+    path.join(projectRoot, 'target', 'debug', binaryName),               // Local Rust build (debug)
+    path.join(__dirname, '..', 'bin', binaryName),                       // MCP server bin directory
+    path.resolve(process.env.HOME || process.env.USERPROFILE || '', '.cargo', 'bin', binaryName) // User's cargo bin
+  ];
+  
+  // Find the first existing binary
+  for (const binaryPath of possibleBinaryPaths) {
+    if (existsSync(binaryPath)) {
+      console.log(`Found existing binary at: ${binaryPath}`);
+      
+      // Make sure the binary is executable on Unix systems
+      if (!isWindows) {
+        try {
+          await execAsync(`chmod +x "${binaryPath}"`);
+        } catch (error) {
+          console.warn(`Warning: Could not make binary executable: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      
+      return binaryPath;
+    }
+  }
+  
+  console.log('No existing binary found, attempting to build...');
+  
+  // Try to build the binary
+  try {
+    console.log('Building probe binary using cargo...');
+    await execAsync('cargo build --release', { cwd: projectRoot });
+    
+    const builtBinaryPath = path.join(projectRoot, 'target', 'release', binaryName);
+    if (existsSync(builtBinaryPath)) {
+      console.log(`Successfully built binary at ${builtBinaryPath}`);
+      
+      // Copy to the npm/bin directory for consistency
+      const npmBinPath = path.join(projectRoot, 'npm', 'bin');
+      const npmBinaryPath = path.join(npmBinPath, binaryName);
+      
+      try {
+        await fs.ensureDir(npmBinPath);
+        await fs.copy(builtBinaryPath, npmBinaryPath);
+        console.log(`Copied binary to ${npmBinaryPath}`);
+        
+        // Make executable on Unix
+        if (!isWindows) {
+          await execAsync(`chmod +x "${npmBinaryPath}"`);
+        }
+        
+        return npmBinaryPath;
+      } catch (copyError) {
+        console.warn(`Warning: Could not copy binary to npm/bin: ${copyError instanceof Error ? copyError.message : String(copyError)}`);
+        return builtBinaryPath;
+      }
+    }
+  } catch (buildError) {
+    console.warn(`Warning: Failed to build binary: ${buildError instanceof Error ? buildError.message : String(buildError)}`);
+  }
+  
+  // If building fails, try downloading from npm package
+  console.log('Trying to download binary from npm package...');
+  try {
+    // Import downloader dynamically to avoid circular dependencies
+    const downloaderPath = path.join(projectRoot, 'npm', 'src', 'downloader.js');
+    if (existsSync(downloaderPath)) {
+      // @ts-ignore - Dynamic import
+      const { downloadProbeBinary } = await import(downloaderPath);
+      const downloadedPath = await downloadProbeBinary();
+      console.log(`Successfully downloaded binary to ${downloadedPath}`);
+      return downloadedPath;
+    } else {
+      throw new Error(`Downloader not found at ${downloaderPath}`);
+    }
+  } catch (error) {
+    console.error('Error downloading binary:', error);
+    throw new Error(`Could not ensure binary exists: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+// Force using the local npm module by setting the binary path to the local one
+console.log(`Project root: ${projectRoot}`);
+
 
 // Try multiple possible locations for package.json
 let packageVersion = '0.0.0';
@@ -59,8 +158,6 @@ if (packageVersion === '0.0.0') {
     console.error('Error getting version from npm:', error);
   }
 }
-
-import { existsSync } from 'fs';
 
 // Get the path to the bin directory
 const binDir = path.resolve(__dirname, '..', 'bin');
@@ -494,7 +591,15 @@ class ProbeServer {
 
   async run() {
     // The @buger/probe package now handles binary path management internally
-    // We don't need to verify or download the binary in the MCP server anymore
+    // But we need to ensure the binary exists before using it
+    try {
+      const binaryPath = await ensureProbeBinary();
+      console.log(`Using binary path: ${binaryPath}`);
+      setBinaryPath(binaryPath);
+    } catch (error) {
+      console.error('Failed to ensure binary exists:', error);
+      throw error;
+    }
     
     // Just connect the server to the transport
     const transport = new StdioServerTransport();

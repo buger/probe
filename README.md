@@ -179,6 +179,7 @@ Example queries:
 ### Quick Installation
 
 You can install Probe with a single command using npm, curl, or PowerShell:
+You can install Probe with a single command using npm, curl, or PowerShell:
 
 **Using npm (Recommended for Node.js users)**
 ~~~bash
@@ -186,12 +187,17 @@ npm install -g @buger/probe
 ~~~
 
 **Using curl (For macOS and Linux)**
+**Using curl (For macOS and Linux)**
 ~~~bash
 curl -fsSL https://raw.githubusercontent.com/buger/probe/main/install.sh | bash
 ~~~
 
 **What the curl script does**:
 
+1. Detects your operating system and architecture
+2. Fetches the latest release from GitHub
+3. Downloads the appropriate binary for your system
+4. Verifies the checksum for security
 1. Detects your operating system and architecture
 2. Fetches the latest release from GitHub
 3. Downloads the appropriate binary for your system
@@ -230,13 +236,86 @@ iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -
 iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -args "--help"
 ~~~
 
+**Using PowerShell (For Windows)**
+~~~powershell
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex
+~~~
+
+**What the PowerShell script does**:
+
+1. Detects your system architecture (x86_64 or ARM64)
+2. Fetches the latest release from GitHub
+3. Downloads the appropriate Windows binary
+4. Verifies the checksum for security
+5. Installs the binary to your user directory (`%LOCALAPPDATA%\Probe`) by default
+6. Provides instructions to add the binary to your PATH if needed
+
+**Installation options**:
+
+The PowerShell script supports several options:
+
+~~~powershell
+# Install for current user (default)
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex
+
+# Install system-wide (requires admin privileges)
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -args "--system"
+
+# Install to a custom directory
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -args "--dir", "C:\Tools\Probe"
+
+# Show help
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -args "--help"
+~~~
+
+**Using PowerShell (For Windows)**
+~~~powershell
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex
+~~~
+
+**What the PowerShell script does**:
+
+1. Detects your system architecture (x86_64 or ARM64)
+2. Fetches the latest release from GitHub
+3. Downloads the appropriate Windows binary
+4. Verifies the checksum for security
+5. Installs the binary to your user directory (`%LOCALAPPDATA%\Probe`) by default
+6. Provides instructions to add the binary to your PATH if needed
+
+**Installation options**:
+
+The PowerShell script supports several options:
+
+~~~powershell
+# Install for current user (default)
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex
+
+# Install system-wide (requires admin privileges)
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -args "--system"
+
+# Install to a custom directory
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -args "--dir", "C:\Tools\Probe"
+
+# Show help
+iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -args "--help"
+~~~
+
 ### Requirements
 
+<<<<<<< HEAD
+- **Operating Systems**: macOS, Linux, or Windows (with MSYS/Git Bash/WSL)  
+- **Architectures**: x86_64 (all platforms) or ARM64 (macOS only)  
+- **Tools**: `curl`, `bash`, and `sudo`/root privileges  
+- **Windows-specific**: For building from source on Windows, you'll need:
+  - MSYS2 with MinGW-w64 toolchain (provides GCC/G++)
+  - Visual Studio 2022 Build Tools with C++ workload (optional, but recommended)
+=======
 - **Operating Systems**: macOS, Linux, or Windows
 - **Architectures**: x86_64 (all platforms) or ARM64 (macOS and Windows)
 - **Tools**:
   - For macOS/Linux: `curl`, `bash`, and `sudo`/root privileges
   - For Windows: PowerShell 5.1 or later
+>>>>>>> dda6cb5a67b76f29cbd68ab3a16049b79ef96565
 
 ### Manual Installation
 
@@ -244,6 +323,10 @@ iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -
    - `probe-x86_64-linux.tar.gz` for Linux (x86_64)
    - `probe-x86_64-darwin.tar.gz` for macOS (Intel)
    - `probe-aarch64-darwin.tar.gz` for macOS (Apple Silicon)
+   - `probe-x86_64-windows.zip` for Windows (x86_64)
+   - `probe-aarch64-windows.zip` for Windows (ARM64)
+   - `probe-x86_64-windows.zip` for Windows (x86_64)
+   - `probe-aarch64-windows.zip` for Windows (ARM64)
    - `probe-x86_64-windows.zip` for Windows (x86_64)
    - `probe-aarch64-windows.zip` for Windows (ARM64)
 2. Extract the archive:
@@ -269,6 +352,16 @@ iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -
    
    # Add to PATH (optional)
    [Environment]::SetEnvironmentVariable('PATH', [Environment]::GetEnvironmentVariable('PATH', 'User') + ";$installDir", 'User')
+   # For Windows (using PowerShell)
+   # Create a directory for the binary (if it doesn't exist)
+   $installDir = "$env:LOCALAPPDATA\Probe"
+   New-Item -ItemType Directory -Path $installDir -Force
+   
+   # Move the binary
+   Move-Item -Path .\probe\probe.exe -Destination $installDir
+   
+   # Add to PATH (optional)
+   [Environment]::SetEnvironmentVariable('PATH', [Environment]::GetEnvironmentVariable('PATH', 'User') + ";$installDir", 'User')
    ~~~
 
 ### Building from Source
@@ -276,10 +369,16 @@ iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -
 1. Install Rust and Cargo (if not already installed):
    
    For macOS/Linux:
+   
+   For macOS/Linux:
    ~~~bash
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ~~~
    
+<<<<<<< HEAD
+   For Windows, visit [rustup.rs](https://rustup.rs/) and download the installer.
+   
+=======
    For Windows:
    ~~~powershell
    # Download and run the Rust installer
@@ -288,15 +387,53 @@ iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -
    # Follow the on-screen instructions
    ~~~
 
+>>>>>>> dda6cb5a67b76f29cbd68ab3a16049b79ef96565
 2. Clone this repository:
    ~~~bash
    git clone https://github.com/buger/probe.git
-   cd code-search
+   cd probe
    ~~~
+   
 3. Build the project:
    ~~~bash
    cargo build --release
    ~~~
+   
+   **Windows-specific build requirements:**
+   
+   If you encounter this error on Windows: 
+   ```
+   error occurred in cc-rs: failed to find tool "gcc.exe": program not found 
+   (see https://docs.rs/cc/latest/cc/#compile-time-requirements for help)
+   ```
+   
+   1. Install MSYS2 (provides GCC and other build tools):
+      ~~~bash
+      winget install MSYS2.MSYS2
+      ~~~
+   
+   2. Open the "MSYS2 MSYS2" shortcut in Windows Start Menu and install the MinGW-w64 toolchain:
+      ~~~bash
+      pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain
+      ~~~
+   
+   3. Add the MinGW tools to your PATH environment variable:
+      - Open Windows Settings > System > About > Advanced system settings
+      - Click "Environment Variables"
+      - Edit the "Path" variable (either User or System variables)
+      - Add `C:\msys64\ucrt64\bin` to the list
+      - Click OK on all dialogs
+   
+   4. Restart your terminal/PowerShell and try building again
+:
+      ~~~bash
+      cargo build --release
+      ~~~
+
+   **For more information:**
+   - Official cc-rs documentation: https://docs.rs/cc/latest/cc/#compile-time-requirements
+   - Microsoft C++ build tools: https://code.visualstudio.com/docs/cpp/config-mingw#_installing-the-mingww64-toolchain
+   
 4. (Optional) Install globally:
    ~~~bash
    cargo install --path .
@@ -305,9 +442,18 @@ iwr -useb https://raw.githubusercontent.com/buger/probe/main/install.ps1 | iex -
    This will install the binary to your Cargo bin directory, which is typically:
    - `$HOME/.cargo/bin` on macOS/Linux
    - `%USERPROFILE%\.cargo\bin` on Windows
+   
+   This will install the binary to your Cargo bin directory, which is typically:
+   - `$HOME/.cargo/bin` on macOS/Linux
+   - `%USERPROFILE%\.cargo\bin` on Windows
+   
+   This will install the binary to your Cargo bin directory, which is typically:
+   - `$HOME/.cargo/bin` on macOS/Linux
+   - `%USERPROFILE%\.cargo\bin` on Windows
 
 ### Verifying the Installation
 
+For macOS/Linux:
 For macOS/Linux:
 ~~~bash
 probe --version
@@ -327,8 +473,39 @@ If you get a "command not found" error on Windows, make sure the installation di
 & "$env:ProgramFiles\Probe\probe.exe" --version
 ~~~
 
+For Windows:
+~~~powershell
+probe --version
+~~~
+
+If you get a "command not found" error on Windows, make sure the installation directory is in your PATH or use the full path to the executable:
+~~~powershell
+# If installed to the default user location
+& "$env:LOCALAPPDATA\Probe\probe.exe" --version
+
+# If installed to the default system location
+& "$env:ProgramFiles\Probe\probe.exe" --version
+~~~
+
 ### Troubleshooting
 
+<<<<<<< HEAD
+- **Permissions**: Ensure you can write to `/usr/local/bin`.  
+- **Windows Build Errors**: If you see `gcc.exe: program not found` errors on Windows, follow the MSYS2 installation steps in the [Building from Source](#building-from-source) section.
+- **System Requirements**: Double-check your OS/architecture.  
+- **Manual Install**: If the quick install script fails, try [Manual Installation](#manual-installation).  
+- **GitHub Issues**: Report issues on the [GitHub repository](https://github.com/buger/probe/issues).
+=======
+- **Permissions**:
+  - For macOS/Linux: Ensure you can write to `/usr/local/bin`
+  - For Windows: Ensure you have write permissions to the installation directory
+- **System Requirements**: Double-check your OS/architecture compatibility
+- **PATH Issues**:
+  - For Windows: Restart your terminal after adding the installation directory to PATH
+  - For macOS/Linux: Verify that `/usr/local/bin` is in your PATH
+- **Manual Install**: If the quick install script fails, try [Manual Installation](#manual-installation)
+- **GitHub Issues**: Report issues on the [GitHub repository](https://github.com/buger/probe/issues)
+>>>>>>> dda6cb5a67b76f29cbd68ab3a16049b79ef96565
 - **Permissions**:
   - For macOS/Linux: Ensure you can write to `/usr/local/bin`
   - For Windows: Ensure you have write permissions to the installation directory
@@ -341,6 +518,7 @@ If you get a "command not found" error on Windows, make sure the installation di
 
 ### Uninstalling
 
+For macOS/Linux:
 For macOS/Linux:
 ~~~bash
 # If installed via npm

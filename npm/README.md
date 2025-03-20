@@ -18,6 +18,8 @@ npm install -g @buger/probe
 
 During installation, the package will automatically download the appropriate probe binary for your platform.
 
+**Windows Users**: For Windows-specific requirements and troubleshooting, please see [WINDOWS.md](WINDOWS.md).
+
 ## Features
 
 - **Search Code**: Search for patterns in your codebase using Elasticsearch-like query syntax

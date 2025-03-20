@@ -7,7 +7,7 @@ edition = "2021"
 ahash = "0.8.6"  # Fast, non-cryptographic hash function
 anyhow = "1.0"
 async-trait = "0.1"
-atty = "0.2"
+atty = "0.2.13"
 colored = "3.0.0"
 dirs = "5.0.1"
 grep = "0.3.2"
@@ -63,6 +63,7 @@ path = "src/lib.rs"
 name = "probe"
 path = "src/main.rs"
 
+# Common release settings
 [profile.release]
 opt-level = "z"  # Optimize for size ("s" also works, but "z" is smaller)
 strip = true     # Strip symbols automatically

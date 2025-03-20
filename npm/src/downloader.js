@@ -12,14 +12,24 @@ import { exec as execCallback } from 'child_process';
 import tar from 'tar';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 import { ensureBinDirectory } from './utils.js';
 
 const exec = promisify(execCallback);
+
+// URL for Visual C++ Redistributable
+const MSVC_DOWNLOAD_URL = 'https://aka.ms/vs/17/release/vc_redist.x64.exe';
 
 // GitHub repository information
 const REPO_OWNER = "buger";
 const REPO_NAME = "probe";
 const BINARY_NAME = "probe";
+
+// Windows compatibility constants
+const WINDOWS_ERROR_MESSAGES = {
+  MISSING_MSVC: "Missing Microsoft Visual C++ Redistributable.",
+  COMPATIBILITY_ERROR: "Windows compatibility error."
+};
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -86,6 +96,71 @@ function detectOsArch() {
 
 	console.log(`Detected OS: ${osInfo.type}, Architecture: ${archInfo.type}`);
 	return { os: osInfo, arch: archInfo };
+}
+
+/**
+ * Checks if the Windows system has the required Visual C++ Redistributable
+ * @returns {boolean} True if the system has the required MSVC, false otherwise
+ */
+function checkWindowsMsvcRequirement() {
+	if (os.platform() !== 'win32') {
+		return true; // Not Windows, so no MSVC required
+	}
+
+	try {
+		console.log('Checking for Microsoft Visual C++ Redistributable...');
+		
+		// Check for Visual C++ Redistributable using registry
+		// This looks for common VC++ redistributable packages
+		const registryCommands = [
+			'reg query "HKLM\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64" /v Version',
+			'reg query "HKLM\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\X64" /v Version',
+			'reg query "HKLM\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\AMD64" /v Version',
+			'reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64" /v Version',
+			'reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\X64" /v Version',
+			'reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\AMD64" /v Version',
+			'reg query "HKLM\\SOFTWARE\\Classes\\Installer\\Dependencies\\Microsoft.VS.VC_RuntimeAdditional_amd64" /v Version',
+			'reg query "HKLM\\SOFTWARE\\Classes\\Installer\\Dependencies\\Microsoft.VS.VC_RuntimeMinimum_amd64" /v Version',
+			'reg query "HKLM\\SOFTWARE\\Classes\\Installer\\Dependencies\\{14b62ad6-7477-5e51-0408-611b9970331b}" /v Version'
+		];
+
+		// Try each registry command until one succeeds
+		for (const cmd of registryCommands) {
+			try {
+				execSync(cmd, { stdio: 'ignore' });
+				console.log('Microsoft Visual C++ Redistributable found');
+				return true;
+			} catch (error) {
+				// This command failed, try the next one
+			}
+		}
+
+		console.log('Microsoft Visual C++ Redistributable not found');
+		return false;
+	} catch (error) {
+		console.error('Error checking for Microsoft Visual C++ Redistributable:', error);
+		return false;
+	}
+}
+
+/**
+ * Attempts to download and install Visual C++ Redistributable
+ * @returns {Promise<boolean>} True if installation was successful, false otherwise
+ */
+async function downloadAndInstallMsvc() {
+	if (os.platform() !== 'win32') {
+		return true; // Not Windows, so no MSVC required
+	}
+
+	try {
+		console.log(`Downloading Microsoft Visual C++ Redistributable from ${MSVC_DOWNLOAD_URL}...`);
+		console.log('Please complete the manual installation when the installer starts.');
+		await exec(`start "" "${MSVC_DOWNLOAD_URL}"`);
+		return true;
+	} catch (error) {
+		console.error('Error downloading Microsoft Visual C++ Redistributable:', error);
+		return false;
+	}
 }
 
 /**
@@ -470,6 +545,26 @@ export async function downloadProbeBinary(version) {
 		// Create the bin directory if it doesn't exist
 		await ensureBinDirectory();
 
+		// For Windows: Check MSVC requirements
+		if (os.platform() === 'win32') {
+			const hasMsvc = checkWindowsMsvcRequirement();
+			if (!hasMsvc) {
+				console.warn('===================================================');
+				console.warn('WARNING: Microsoft Visual C++ Redistributable not found');
+				console.warn('The probe binary requires Microsoft Visual C++ Redistributable to run on Windows.');
+				console.warn('You may need to install it manually before using probe.');
+				console.warn('Download link: https://aka.ms/vs/17/release/vc_redist.x64.exe');
+				console.warn('===================================================');
+				
+				// Ask if user wants to download and install the MSVC redist
+				if (process.env.PROBE_AUTO_INSTALL_MSVC === 'true') {
+					console.log('Attempting to download Microsoft Visual C++ Redistributable automatically...');
+					await downloadAndInstallMsvc();
+					console.log('Please complete the installation process before continuing.');
+				}
+			}
+		}
+
 		// If no version is specified, use the package version
 		if (!version || version === '0.0.0') {
 			version = await getPackageVersion();
@@ -496,6 +591,11 @@ export async function downloadProbeBinary(version) {
 
 		// Get OS and architecture information
 		const { os: osInfo, arch: archInfo } = detectOsArch();
+
+		// Specific compatibility warning for Windows
+		if (osInfo.type === 'windows') {
+			console.log('Note: On Windows, probe requires Microsoft Visual C++ Redistributable 2015-2022.');
+		}
 
 		// Determine which version to download
 		let versionToUse = version;
@@ -540,7 +640,33 @@ export async function downloadProbeBinary(version) {
 		console.log(`Binary successfully installed at ${extractedBinaryPath} (version: ${tagVersion})`);
 		return extractedBinaryPath;
 	} catch (error) {
-		console.error('Error downloading probe binary:', error);
+		// More detailed error information for Windows users
+		if (os.platform() === 'win32') {
+			console.error('Error downloading or running probe binary:', error);
+			
+			if (error.message.includes('VCRUNTIME') || error.message.includes('MSVCP')) {
+				console.error('===================================================');
+				console.error('ERROR: This error is likely due to missing Microsoft Visual C++ Redistributable.');
+				console.error('Please download and install it from: https://aka.ms/vs/17/release/vc_redist.x64.exe');
+				console.error('After installation, try running probe again.');
+				console.error('===================================================');
+			} else {
+				console.error('===================================================');
+				console.error('ERROR: There was a problem with the probe binary on Windows.');
+				console.error('This may be due to:');
+				console.error('1. Missing Microsoft Visual C++ Redistributable');
+				console.error('2. Incompatible Windows version');
+				console.error('3. Security software blocking the binary');
+				console.error('');
+				console.error('Please try:');
+				console.error('1. Installing Microsoft Visual C++ Redistributable: https://aka.ms/vs/17/release/vc_redist.x64.exe');
+				console.error('2. Running the command with administrative privileges');
+				console.error('3. Temporarily disabling security software');
+				console.error('===================================================');
+			}
+		} else {
+			console.error('Error downloading probe binary:', error);
+		}
 		throw error;
 	}
 }

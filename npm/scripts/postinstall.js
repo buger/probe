@@ -10,6 +10,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
 import { downloadProbeBinary } from '../src/downloader.js';
 
 // Get the directory of the current module
@@ -76,6 +77,14 @@ You can download the binary from: https://github.com/buger/probe/releases
 				try {
 					if (fs.existsSync(packageJsonPath)) {
 						console.log(`Found package.json at: ${packageJsonPath}`);
+
+							// Show special notice for Windows users
+							if (os.platform() === 'win32') {
+								console.log('\n========== WINDOWS USERS NOTICE ==========');
+								console.log('The probe binary requires Microsoft Visual C++ Redistributable 2015-2022.');
+								console.log('If you encounter errors, please see the WINDOWS.md file for troubleshooting.');
+								console.log('=========================================\n');
+							}
 						const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
 						if (packageJson.version) {
 							packageVersion = packageJson.version;
@@ -107,6 +116,12 @@ You can download the binary from: https://github.com/buger/probe/releases
 			console.log('\nProbe binary was successfully downloaded and installed during installation.');
 			console.log('You can now use the probe command directly from the command line.');
 		} catch (error) {
+			// Show more detailed error for Windows users
+			if (os.platform() === 'win32') {
+				console.error('\n========== WINDOWS INSTALLATION ERROR ==========');
+				console.error('Please check WINDOWS.md for Windows-specific requirements and troubleshooting steps.');
+				console.error('=================================================\n');
+			}
 			console.error('Error downloading probe binary:', error);
 			console.error('\nNote: The probe binary will need to be downloaded when you first use the package.');
 			console.error('If you encounter any issues, you can manually place the binary in the bin directory.');
