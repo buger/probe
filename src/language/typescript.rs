@@ -37,13 +37,16 @@ impl LanguageImpl for TypeScriptLanguage {
         matches!(
             node.kind(),
             "function_declaration"
+                | "object"
+                | "array"
+                | "function_expression"
                 | "method_definition"
                 | "class_declaration"
                 | "arrow_function"
                 | "function"
                 | "export_statement"
-                | "variable_declaration"
-                | "lexical_declaration"
+                | "jsx_element"
+                | "jsx_self_closing_element"
                 | "interface_declaration"  // TypeScript specific
                 | "type_alias_declaration" // TypeScript specific
                 | "enum_declaration" // TypeScript specific

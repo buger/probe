@@ -29,13 +29,16 @@ impl LanguageImpl for JavaScriptLanguage {
         matches!(
             node.kind(),
             "function_declaration"
+                | "object"
+                | "array"
+                | "function_expression"
                 | "method_definition"
                 | "class_declaration"
                 | "arrow_function"
                 | "function"
                 | "export_statement"
-                | "variable_declaration"
-                | "lexical_declaration"
+                | "jsx_element"
+                | "jsx_self_closing_element"
                 | "property_identifier"  // Added for JavaScript method names
                 | "class_body"           // Added for JavaScript class body
                 | "class" // Added for JavaScript class
