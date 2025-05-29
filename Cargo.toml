@@ -2,6 +2,13 @@
 name = "probe"
 version = "0.3.0"
 edition = "2021"
+authors = ["Leonid Bugaev <leonsbox@gmail.com>"]
+description = "AI-friendly, fully local, semantic code search tool for large codebases"
+license = "MIT"
+repository = "https://github.com/buger/probe"
+readme = "README.md"
+keywords = ["search", "code", "ast", "grep", "semantic"]
+categories = ["command-line-utilities", "development-tools", "text-processing"]
 
 [dependencies]
 ahash = "0.8.6"  # Fast, non-cryptographic hash function
