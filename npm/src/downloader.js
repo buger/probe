@@ -131,13 +131,13 @@ async function getLatestRelease(version) {
 				throw new Error('No releases found');
 			}
 
-			// Try to find a release that matches the version prefix
-			let bestRelease = response.data[0]; // Default to first release
+			// Find the best release based on version matching and stability
+			let bestRelease = null;
 
 			if (version && version !== '0.0.0') {
 				// Try to find a release that starts with the same version prefix
 				const versionParts = version.split('.');
-				const versionPrefix = versionParts.slice(0, 2).join('.'); // e.g., "0.2" from "0.2.2-rc7"
+				const versionPrefix = versionParts.slice(0, 2).join('.'); // e.g., "1.0" from "1.0.0"
 
 				console.log(`Looking for releases matching prefix: ${versionPrefix}`);
 
@@ -153,13 +153,33 @@ async function getLatestRelease(version) {
 				}
 			}
 
+			// If no version-specific match found, choose the best stable release
+			if (!bestRelease) {
+				console.log('No version-specific match found, looking for best stable release...');
+
+				// First, try to find the latest stable (non-prerelease) release
+				for (const release of response.data) {
+					if (!release.prerelease && !release.draft) {
+						console.log(`Found latest stable release: ${release.tag_name}`);
+						bestRelease = release;
+						break;
+					}
+				}
+
+				// If no stable release found, fall back to the latest release (including pre-releases)
+				if (!bestRelease) {
+					console.log('No stable release found, using latest release (may be pre-release)');
+					bestRelease = response.data[0];
+				}
+			}
+
 			const tag = bestRelease.tag_name;
 			const assets = bestRelease.assets.map(asset => ({
 				name: asset.name,
 				url: asset.browser_download_url
 			}));
 
-			console.log(`Using release: ${tag} with ${assets.length} assets`);
+			console.log(`Using release: ${tag} with ${assets.length} assets (prerelease: ${bestRelease.prerelease})`);
 			return { tag, assets };
 		}
 
@@ -187,12 +207,37 @@ function findBestAsset(assets, osInfo, archInfo) {
 		}
 
 		let score = 0;
+		let osMatch = false;
+		let archMatch = false;
 
-		// Check for OS match
-		for (const keyword of osInfo.keywords) {
-			if (asset.name.includes(keyword)) {
-				score += 5;
-				break;
+		// Check for OS match - be more specific about platform detection
+		if (osInfo.type === 'windows') {
+			// For Windows, look for specific Windows identifiers
+			if (asset.name.includes('pc-windows') || asset.name.includes('windows-msvc') ||
+				asset.name.includes('win32') || asset.name.includes('win64')) {
+				score += 10; // Higher score for Windows-specific identifiers
+				osMatch = true;
+			} else if (asset.name.includes('windows') || asset.name.includes('win')) {
+				score += 8; // Lower score for generic Windows keywords
+				osMatch = true;
+			}
+			// Prefer .zip files on Windows
+			if (asset.name.endsWith('.zip')) {
+				score += 2;
+			}
+			// Penalize non-Windows platforms
+			if (asset.name.includes('darwin') || asset.name.includes('apple') ||
+				asset.name.includes('linux') || asset.name.includes('gnu')) {
+				score -= 20; // Heavy penalty for wrong OS
+			}
+		} else {
+			// For other OS types, use the original logic
+			for (const keyword of osInfo.keywords) {
+				if (asset.name.includes(keyword)) {
+					score += 5;
+					osMatch = true;
+					break;
+				}
 			}
 		}
 
@@ -200,6 +245,7 @@ function findBestAsset(assets, osInfo, archInfo) {
 		for (const keyword of archInfo.keywords) {
 			if (asset.name.includes(keyword)) {
 				score += 5;
+				archMatch = true;
 				break;
 			}
 		}
@@ -209,16 +255,21 @@ function findBestAsset(assets, osInfo, archInfo) {
 			score += 3;
 		}
 
-		// If we have a perfect match, use it immediately
-		if (score === 13) {
-			console.log(`Found perfect match: ${asset.name}`);
-			return asset;
-		}
+		console.log(`  ${asset.name}: score ${score} (OS: ${osMatch}, Arch: ${archMatch})`);
 
-		// Otherwise, keep track of the best match so far
-		if (score > bestScore) {
-			bestScore = score;
-			bestAsset = asset;
+		// Only consider assets that match both OS and architecture
+		if (osMatch && archMatch) {
+			// If we have a very high score, use it immediately
+			if (score >= 18) {
+				console.log(`Found excellent match: ${asset.name} (score: ${score})`);
+				return asset;
+			}
+
+			// Otherwise, keep track of the best match so far
+			if (score > bestScore) {
+				bestScore = score;
+				bestAsset = asset;
+			}
 		}
 	}
 
@@ -322,7 +373,13 @@ async function extractBinary(assetPath, outputDir) {
 			});
 		} else if (assetName.endsWith('.zip')) {
 			console.log(`Extracting zip to ${extractDir}...`);
-			await exec(`unzip -q "${assetPath}" -d "${extractDir}"`);
+			if (isWindows) {
+				// Use PowerShell Expand-Archive on Windows
+				await exec(`powershell -Command "Expand-Archive -Path '${assetPath}' -DestinationPath '${extractDir}' -Force"`);
+			} else {
+				// Use unzip on Unix-like systems
+				await exec(`unzip -q "${assetPath}" -d "${extractDir}"`);
+			}
 		} else {
 			// Assume it's a direct binary
 			console.log(`Copying binary directly to ${binaryPath}`);
