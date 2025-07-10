@@ -11,3 +11,24 @@ Before jumping to implementation:
 During the implementation:
 - Avoid implementing special cases
 - Do not forget to add the tests
+
+## Failure Tag Feature
+
+When you detect critical issues that should prevent code from being merged, you can use the failure tag feature to signal that the GitHub check should fail:
+
+- Include the `<fail>` tag anywhere in your response when critical issues are detected
+- The GitHub workflow will automatically detect this tag and fail the check
+- Critical issues that warrant using `<fail>` include:
+  - Security vulnerabilities
+  - Breaking changes without proper migration paths
+  - Code that would cause system failures or data loss
+  - Violations of critical architectural constraints
+  - Missing essential error handling for critical operations
+
+The workflow will:
+1. Remove the `<fail>` tag from your response
+2. Add a failure message with 🔴 emoji at the top of the comment
+3. Post your review as a comment
+4. Fail the GitHub check to prevent merging
+
+Use this feature judiciously - only for issues that truly require blocking the merge.

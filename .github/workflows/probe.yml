@@ -43,6 +43,16 @@ on:
         required: false
         default: "<!-- probe-bot -->"
         type: string
+      failure_tag:
+        description: "Tag to detect in AI response to mark as failure (e.g., '<fail>')"
+        required: false
+        default: "<fail>"
+        type: string
+      failure_message:
+        description: "Message to prepend when failure is detected"
+        required: false
+        default: "🔴 **CHECK FAILED:** This review has identified issues that require attention."
+        type: string
     secrets:
       # ---- Existing Secrets ----
       PROBE_CHAT_COMMAND:
@@ -96,6 +106,7 @@ jobs:
       issue_number: ${{ steps.set_context.outputs.issue_number }}
       probe_succeeded: ${{ steps.probe.outcome == 'success' }}
       context_type: ${{ steps.format.outputs.context_type }}
+      ai_failure_detected: ${{ steps.read_response.outputs.ai_failure_detected }}
 
     steps:
       - name: Check for App Credentials
@@ -1165,6 +1176,18 @@ jobs:
           RESPONSE_CONTENT=$(cat response.txt 2>/dev/null || echo "")
           ERROR_LOG_CONTENT=$(cat error.log 2>/dev/null || echo "")
           FINAL_BODY=""
+          AI_FAILURE_DETECTED=false
+
+          # Check for failure tag in AI response
+          if [[ -n "${{ inputs.failure_tag }}" && "$RESPONSE_CONTENT" == *"${{ inputs.failure_tag }}"* ]]; then
+            echo "Failure tag '${{ inputs.failure_tag }}' detected in AI response"
+            AI_FAILURE_DETECTED=true
+            # Remove the failure tag from the response content
+            RESPONSE_CONTENT="${RESPONSE_CONTENT//${{ inputs.failure_tag }}/}"
+            echo "ai_failure_detected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ai_failure_detected=false" >> "$GITHUB_OUTPUT"
+          fi
 
           if [[ "$HAS_CHANGES" == "true" ]]; then
             if [[ "$CONTEXT_TYPE" == "pr" ]]; then
@@ -1206,6 +1229,11 @@ jobs:
             FOOTER+="\n${{ inputs.update_comment_marker }}"
           fi
           
+          # Prepend failure message if AI failure was detected
+          if [[ "$AI_FAILURE_DETECTED" == "true" ]]; then
+            FINAL_BODY="${{ inputs.failure_message }}\n\n${FINAL_BODY}"
+          fi
+          
           FINAL_BODY="${FINAL_BODY:-🤖 **Error:** AI interaction failed.}${FOOTER}"
 
           echo "Final response body prepared. Length: ${#FINAL_BODY}"
@@ -1216,6 +1244,9 @@ jobs:
           # **base‑64 encode** so GH will not think it contains a secret
           ENCODED=$(printf '%s' "$FINAL_BODY" | base64 -w0)
           echo "response_body_b64=$ENCODED" >> "$GITHUB_OUTPUT"
+          
+          # Pass AI failure status to job outputs for potential job failure
+          echo "ai_failure_detected=$AI_FAILURE_DETECTED" >> "$GITHUB_OUTPUT"
 
   post_response:
     if: always() && needs.process_comment.result != 'skipped'
@@ -1301,4 +1332,11 @@ jobs:
           body-path: ${{ steps.decode.outputs.body_path }}
           reactions: ${{ needs.process_comment.outputs.probe_succeeded == 'true' && '+1' || '-1' }}
           edit-mode: replace
+
+      # ---------- Fail job if AI detected failure ----------------
+      - name: Fail Job on AI Failure Detection
+        if: needs.process_comment.outputs.ai_failure_detected == 'true'
+        run: |
+          echo "::error::AI failure detected in response. Failing the job as requested."
+          exit 1
 # </gh>
