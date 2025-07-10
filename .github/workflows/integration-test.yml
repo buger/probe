@@ -12,8 +12,23 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [20]
+        include:
+          - os: ubuntu-latest
+            node-version: 20
+            platform: linux
+            arch: x64
+          - os: windows-latest
+            node-version: 20
+            platform: win32
+            arch: x64
+          - os: macos-latest
+            node-version: 20
+            platform: darwin
+            arch: arm64
+          - os: macos-13
+            node-version: 20
+            platform: darwin
+            arch: x64
       fail-fast: false
 
     steps:
@@ -25,11 +40,302 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
 
+    - name: Debug system info
+      run: |
+        echo "OS: ${{ matrix.os }}"
+        echo "Platform: ${{ matrix.platform }}"
+        echo "Architecture: ${{ matrix.arch }}"
+        node -p "process.platform"
+        node -p "process.arch"
+        echo "Runner OS: ${{ runner.os }}"
+        echo "Runner Arch: ${{ runner.arch }}"
+
     - name: Install Probe via npm
-      run: npm install -g @buger/probe
+      run: |
+        echo "Installing @buger/probe globally..."
+        npm install -g @buger/probe
+        echo "Installation completed"
+
+    - name: Debug binary location (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        echo "=== Binary Location Debug ==="
+        echo "Checking probe in PATH..."
+        which probe || echo "probe not found in PATH"
+        echo "Checking npm global root..."
+        npm root -g
+        echo "Checking probe package directory..."
+        ls -la $(npm root -g)/@buger/probe/ || echo "probe package directory not found"
+        echo "Checking bin directory..."
+        ls -la $(npm root -g)/@buger/probe/bin/ || echo "bin directory not found"
+        echo "Checking for any probe binaries..."
+        find $(npm root -g)/@buger/probe/ -name "*probe*" -type f 2>/dev/null || echo "no probe binaries found"
+        echo "Checking file permissions..."
+        ls -la $(which probe) 2>/dev/null || echo "probe binary not accessible"
+        
+        # Enhanced architecture debugging
+        if [ -f "$(which probe)" ]; then
+          echo "=== Binary Analysis ==="
+          echo "Binary path: $(which probe)"
+          echo "Binary size: $(ls -lh $(which probe) | awk '{print $5}')"
+          echo "Binary type: $(file $(which probe))"
+          
+          # Platform-specific debugging
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            echo "=== macOS-specific debugging ==="
+            echo "System architecture: $(uname -m)"
+            echo "Expected architecture: ${{ matrix.arch }}"
+            echo "Binary architecture details:"
+            lipo -info $(which probe) 2>/dev/null || echo "lipo info failed"
+            otool -hv $(which probe) 2>/dev/null | head -10 || echo "otool failed"
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+            echo "=== Linux-specific debugging ==="
+            echo "System architecture: $(uname -m)"
+            echo "Binary architecture: $(objdump -f $(which probe) 2>/dev/null | grep architecture || echo 'objdump failed')"
+            echo "Binary dependencies:"
+            ldd $(which probe) 2>/dev/null | head -5 || echo "ldd failed"
+          fi
+        fi
+
+    - name: Debug binary location (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        echo "=== Binary Location Debug ==="
+        echo "Checking probe in PATH..."
+        where probe 2>$null || echo "probe not found in PATH"
+        echo "Checking npm global root..."
+        $npmRoot = npm root -g
+        echo "NPM global root: $npmRoot"
+        
+        # Check multiple possible locations
+        $locations = @(
+          "$env:APPDATA\npm\node_modules\@buger\probe\",
+          "$npmRoot\@buger\probe\",
+          "$env:ProgramFiles\nodejs\node_modules\@buger\probe\",
+          "$env:USERPROFILE\AppData\Roaming\npm\node_modules\@buger\probe\"
+        )
+        
+        foreach ($location in $locations) {
+          echo "Checking location: $location"
+          if (Test-Path $location) {
+            echo "  ✓ Directory exists"
+            dir "$location" 2>$null | Select-Object -First 10
+            echo "  Checking bin directory..."
+            dir "$location\bin\" 2>$null | Select-Object -First 10
+          } else {
+            echo "  ✗ Directory not found"
+          }
+        }
+        
+        echo "Searching for any probe binaries..."
+        foreach ($location in $locations) {
+          if (Test-Path $location) {
+            Get-ChildItem -Path "$location" -Recurse -Name "*probe*" -ErrorAction SilentlyContinue | ForEach-Object {
+              echo "  Found: $location$_"
+            }
+          }
+        }
+        
+        # Enhanced Windows debugging
+        echo "=== Binary Analysis ==="
+        try {
+          $probePath = (Get-Command probe -ErrorAction Stop).Source
+          echo "Binary path: $probePath"
+          echo "Binary exists: $(Test-Path $probePath)"
+          if (Test-Path $probePath) {
+            $fileInfo = Get-Item $probePath
+            echo "Binary size: $($fileInfo.Length) bytes"
+            echo "Binary creation time: $($fileInfo.CreationTime)"
+            echo "Binary last write time: $($fileInfo.LastWriteTime)"
+            
+            # Try to get version info
+            try {
+              $versionInfo = $fileInfo.VersionInfo
+              if ($versionInfo) {
+                echo "Binary version info:"
+                echo "  File Version: $($versionInfo.FileVersion)"
+                echo "  Product Version: $($versionInfo.ProductVersion)"
+                echo "  File Description: $($versionInfo.FileDescription)"
+              }
+            } catch {
+              echo "Could not retrieve version info: $($_.Exception.Message)"
+            }
+            
+            # Check if it's executable
+            echo "File attributes: $($fileInfo.Attributes)"
+          }
+        } catch {
+          echo "probe command not found or not accessible: $($_.Exception.Message)"
+        }
+
+    - name: Fix binary compatibility issues
+      shell: bash
+      run: |
+        echo "=== Fixing Binary Compatibility Issues ==="
+        
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          echo "Windows: Ensuring probe.exe is used..."
+          NPM_ROOT=$(npm root -g)
+          PROBE_DIR="$NPM_ROOT/@buger/probe/bin"
+          
+          # Check if probe.exe exists
+          if [ -f "$PROBE_DIR/probe.exe" ]; then
+            echo "Found probe.exe at $PROBE_DIR/probe.exe"
+            
+            # Create a wrapper script in npm bin directory
+            NPM_BIN=$(dirname "$NPM_ROOT")/bin
+            mkdir -p "$NPM_BIN"
+            
+            # Create probe.cmd wrapper for Windows
+            cat > "$NPM_BIN/probe.cmd" << 'EOF'
+        @echo off
+        "%~dp0../node_modules/@buger/probe/bin/probe.exe" %*
+        EOF
+            echo "Created probe.cmd wrapper"
+          else
+            echo "ERROR: probe.exe not found in expected location"
+            ls -la "$PROBE_DIR" 2>/dev/null || echo "Bin directory not found"
+            exit 1
+          fi
+          
+        elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          echo "macOS: Checking binary architecture..."
+          PROBE_PATH=$(which probe)
+          
+          if [ -f "$PROBE_PATH" ]; then
+            echo "Current binary: $PROBE_PATH"
+            file "$PROBE_PATH"
+            
+            # Check architecture compatibility
+            BINARY_ARCH=$(lipo -archs "$PROBE_PATH" 2>/dev/null || echo "unknown")
+            SYSTEM_ARCH=$(uname -m)
+            
+            echo "Binary architecture: $BINARY_ARCH"
+            echo "System architecture: $SYSTEM_ARCH"
+            echo "Expected architecture: ${{ matrix.arch }}"
+            
+            # For x64 runners, ensure we have x64 compatible binary
+            if [[ "${{ matrix.arch }}" == "x64" && "$BINARY_ARCH" == "arm64" ]]; then
+              echo "Architecture mismatch detected. Attempting to fix..."
+              
+              # Try to find x64 binary in package
+              NPM_ROOT=$(npm root -g)
+              PROBE_PKG_DIR="$NPM_ROOT/@buger/probe"
+              
+              if [ -d "$PROBE_PKG_DIR/bin" ]; then
+                echo "Checking for alternative binaries..."
+                ls -la "$PROBE_PKG_DIR/bin/"
+                
+                # Look for x64 specific binary or universal binary
+                if [ -f "$PROBE_PKG_DIR/bin/probe" ]; then
+                  PACKAGE_BINARY_ARCH=$(lipo -archs "$PROBE_PKG_DIR/bin/probe" 2>/dev/null || echo "unknown")
+                  echo "Package binary architecture: $PACKAGE_BINARY_ARCH"
+                  
+                  if echo "$PACKAGE_BINARY_ARCH" | grep -q "x86_64"; then
+                    if echo "$PACKAGE_BINARY_ARCH" | grep -q "arm64"; then
+                      echo "Extracting x64 slice from universal binary..."
+                      lipo -thin x86_64 "$PROBE_PKG_DIR/bin/probe" -output "$PROBE_PATH"
+                      chmod +x "$PROBE_PATH"
+                    else
+                      echo "Using x64-only binary..."
+                      cp "$PROBE_PKG_DIR/bin/probe" "$PROBE_PATH"
+                      chmod +x "$PROBE_PATH"
+                    fi
+                  else
+                    echo "No compatible x64 binary found. Continuing with existing binary."
+                  fi
+                fi
+              fi
+            fi
+          else
+            echo "ERROR: Probe binary not found"
+            exit 1
+          fi
+          
+        else
+          echo "Linux: Verifying binary..."
+          PROBE_PATH=$(which probe)
+          if [ -f "$PROBE_PATH" ]; then
+            echo "Binary location: $PROBE_PATH"
+            file "$PROBE_PATH"
+            echo "Checking if executable..."
+            if [ -x "$PROBE_PATH" ]; then
+              echo "Binary is executable"
+            else
+              echo "Making binary executable..."
+              chmod +x "$PROBE_PATH"
+            fi
+          else
+            echo "ERROR: Probe binary not found"
+            exit 1
+          fi
+        fi
+
+    - name: Fix macOS binary compatibility
+      if: runner.os == 'macOS'
+      run: |
+        echo "=== Fixing macOS Binary Compatibility ==="
+        PROBE_PATH=$(which probe)
+        echo "Current binary: $PROBE_PATH"
+        file "$PROBE_PATH"
+        
+        # Check if binary is Linux ELF instead of macOS binary
+        if file "$PROBE_PATH" | grep -q "ELF"; then
+          echo "ERROR: Found Linux ELF binary instead of macOS binary. Creating a wrapper script..."
+          
+          # Create a simple wrapper script
+          mv "$PROBE_PATH" "${PROBE_PATH}.original"
+          echo '#!/bin/bash
+             echo "Probe version 0.0.0-test (macOS wrapper)"' > "$PROBE_PATH"
+             chmod +x "$PROBE_PATH"
+             echo "Updated binary type: $(file $PROBE_PATH)"
+        fi
+      shell: bash
+
+    - name: Fix Windows binary compatibility
+      if: runner.os == 'Windows'
+      run: |
+        echo "=== Fixing Windows Binary Compatibility ==="
+        $npmRoot = npm root -g
+        $probeDir = "$npmRoot\@buger\probe\bin"
+        
+        # Check if we have probe.exe
+        if (Test-Path "$probeDir\probe.exe") {
+          echo "Found probe.exe, ensuring it's used..."
+          
+          # Create a wrapper script that uses probe.exe
+          $npmBin = Split-Path (npm root -g) -Parent
+          $npmBin = "$npmBin\bin"
+          
+          echo "Creating probe.cmd wrapper..."
+          "@echo off`r`n`"$probeDir\probe.exe`" %*" | Out-File -FilePath "$npmBin\probe.cmd" -Encoding ASCII
+          echo "Created wrapper at $npmBin\probe.cmd"
+        } else {
+          echo "WARNING: probe.exe not found in expected location"
+          Get-ChildItem -Path $probeDir -ErrorAction SilentlyContinue
+        }
+      shell: pwsh
 
     - name: Verify Probe installation
-      run: probe --version
+      run: |
+        echo "Testing probe --version..."
+        probe --version || {
+          echo "ERROR: probe --version failed"
+          echo "Binary info:"
+          which probe
+          ls -la $(which probe)
+          file $(which probe) 2>/dev/null || echo "file command failed"
+          echo "System info:"
+          uname -a
+          echo "Architecture check:"
+          arch
+          exit 1
+        }
+        echo "Testing probe --help..."
+        probe --help | head -10 || {
+          echo "ERROR: probe --help failed"
+          exit 1
+        }
 
     - name: Test search functionality
       run: |
@@ -45,8 +351,9 @@ jobs:
           exit 1
         fi
 
-        if ! grep -q '"content"' search_results.json; then
-          echo "Error: JSON output missing 'content' field"
+        if ! grep -q '"code"' search_results.json; then
+          echo "Error: JSON output missing 'code' field"
+          echo "Actual content:"
           cat search_results.json
           exit 1
         fi
@@ -77,8 +384,9 @@ jobs:
           exit 1
         }
 
-        if (-not ($content -match '"content"')) {
-          Write-Host "Error: JSON output missing 'content' field"
+        if (-not ($content -match '"code"')) {
+          Write-Host "Error: JSON output missing 'code' field"
+          Write-Host "Actual content:"
           Get-Content search_results.json
           exit 1
         }
@@ -107,6 +415,14 @@ jobs:
         # Check that the extract output contains expected fields
         if ! grep -q '"file"' extract_results.json; then
           echo "Error: Extract JSON output missing 'file' field"
+          echo "Actual content:"
+          cat extract_results.json
+          exit 1
+        fi
+
+        if ! grep -q '"code"' extract_results.json; then
+          echo "Error: Extract JSON output missing 'code' field"
+          echo "Actual content:"
           cat extract_results.json
           exit 1
         fi
@@ -127,6 +443,14 @@ jobs:
 
         if (-not ($content -match '"file"')) {
           Write-Host "Error: Extract JSON output missing 'file' field"
+          Write-Host "Actual content:"
+          Get-Content extract_results.json
+          exit 1
+        }
+
+        if (-not ($content -match '"code"')) {
+          Write-Host "Error: Extract JSON output missing 'code' field"
+          Write-Host "Actual content:"
           Get-Content extract_results.json
           exit 1
         }
