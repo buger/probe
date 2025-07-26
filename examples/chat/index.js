@@ -62,6 +62,7 @@ export function main() {
     .option('--max-iterations <number>', 'Maximum number of tool iterations allowed (default: 30)')
     .option('--prompt <value>', 'Use a custom prompt (values: architect, code-review, support, path to a file, or arbitrary string)')
     .option('--allow-edit', 'Enable the implement tool for editing files')
+    .option('--allow-suggestions', 'Enable the suggest tool for suggesting code changes')
     .option('--trace-file [path]', 'Enable tracing to file (default: ./traces.jsonl)')
     .option('--trace-remote [endpoint]', 'Enable tracing to remote endpoint (default: http://localhost:4318/v1/traces)')
     .option('--trace-console', 'Enable tracing to console (for debugging)')
@@ -147,6 +148,12 @@ export function main() {
   if (options.allowEdit) {
     process.env.ALLOW_EDIT = '1';
     logInfo(chalk.blue(`Enabling implement tool with --allow-edit flag`));
+  }
+
+  // Set ALLOW_SUGGESTIONS from command line if provided
+  if (options.allowSuggestions) {
+    process.env.ALLOW_SUGGESTIONS = '1';
+    logInfo(chalk.blue(`Enabling suggest tool with --allow-suggestions flag`));
   }
 
   // Set telemetry options from command line if provided
@@ -260,7 +267,8 @@ export function main() {
         isNonInteractive: true,
         customPrompt: customPrompt,
         promptType: options.prompt && ['architect', 'code-review', 'support', 'engineer'].includes(options.prompt) ? options.prompt : null,
-        allowEdit: options.allowEdit
+        allowEdit: options.allowEdit,
+        allowSuggestions: options.allowSuggestions
       });
       // Model/Provider info is logged via logInfo above if debug enabled
       logInfo(chalk.blue(`Using Session ID: ${chat.getSessionId()}`)); // Log the actual session ID being used
@@ -358,7 +366,7 @@ export function main() {
       .then(module => {
         const { startWebServer } = module;
         logInfo(`Starting web server on port ${process.env.PORT || 8080}...`);
-        startWebServer(version, hasApiKeys, { allowEdit: options.allowEdit });
+        startWebServer(version, hasApiKeys, { allowEdit: options.allowEdit, allowSuggestions: options.allowSuggestions });
       })
       .catch(error => {
         logError(chalk.red(`Error starting web server: ${error.message}`));
@@ -391,7 +399,8 @@ export function main() {
       isNonInteractive: false,
       customPrompt: customPrompt,
       promptType: options.prompt && ['architect', 'code-review', 'support', 'engineer'].includes(options.prompt) ? options.prompt : null,
-      allowEdit: options.allowEdit
+      allowEdit: options.allowEdit,
+      allowSuggestions: options.allowSuggestions
     });
 
     // Log model/provider info using logInfo
