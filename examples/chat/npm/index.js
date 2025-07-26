@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { openai } from '@ai-sdk/openai';
+import { google } from '@ai-sdk/google';
 import { existsSync } from 'fs';
 import { tools } from '@buger/probe';
 
@@ -21,8 +22,10 @@ export class ProbeChat {
    * @param {string} options.model - Model name to use
    * @param {string} options.anthropicApiKey - Anthropic API key
    * @param {string} options.openaiApiKey - OpenAI API key
+   * @param {string} options.googleApiKey - Google API key
    * @param {string} options.anthropicApiUrl - Custom Anthropic API URL
    * @param {string} options.openaiApiUrl - Custom OpenAI API URL
+   * @param {string} options.googleApiUrl - Custom Google API URL
    * @param {Array<string>} options.allowedFolders - Folders to search in
    */
   constructor(options = {}) {
@@ -32,8 +35,10 @@ export class ProbeChat {
       model: options.model || process.env.MODEL_NAME,
       anthropicApiKey: options.anthropicApiKey || process.env.ANTHROPIC_API_KEY,
       openaiApiKey: options.openaiApiKey || process.env.OPENAI_API_KEY,
+      googleApiKey: options.googleApiKey || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY,
       anthropicApiUrl: options.anthropicApiUrl || process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com/v1',
       openaiApiUrl: options.openaiApiUrl || process.env.OPENAI_API_URL || 'https://api.openai.com/v1',
+      googleApiUrl: options.googleApiUrl || process.env.GOOGLE_API_URL,
       allowedFolders: options.allowedFolders || (process.env.ALLOWED_FOLDERS ?
         process.env.ALLOWED_FOLDERS.split(',').map(folder => folder.trim()).filter(Boolean) : [])
     };
@@ -101,8 +106,26 @@ export class ProbeChat {
       if (this.options.debug) {
         console.log(`[DEBUG] Using OpenAI API with model: ${this.model}`);
       }
+    } else if (this.options.googleApiKey) {
+      // Configure the google provider with API key
+      this.provider = (modelName) => {
+        // Set the API key in the environment variable (both names for compatibility)
+        process.env.GOOGLE_API_KEY = this.options.googleApiKey;
+        process.env.GEMINI_API_KEY = this.options.googleApiKey;
+        if (this.options.googleApiUrl) {
+          process.env.GOOGLE_API_URL = this.options.googleApiUrl;
+        }
+        return google(modelName);
+      };
+
+      this.model = this.options.model || 'gemini-2.5-pro-preview-06-05';
+      this.apiType = 'google';
+
+      if (this.options.debug) {
+        console.log(`[DEBUG] Using Google API with model: ${this.model}`);
+      }
     } else {
-      throw new Error('No API key provided. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable.');
+      throw new Error('No API key provided. Please set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY environment variable.');
     }
   }
 

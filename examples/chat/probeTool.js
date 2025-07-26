@@ -278,9 +278,29 @@ const baseImplementTool = {
 			// We'll use child_process.spawn but in a way that's compatible with the existing code
 			return new Promise((resolve, reject) => {
 				try {
-					// Create a child process with spawn
+					// Prepare environment variables for aider
+					// Aider expects GEMINI_API_KEY or GOOGLE_API_KEY for Google/Gemini models
+					const aiderEnv = {
+						...process.env, // Inherit all current environment variables
+					};
+
+					// Ensure Google API key is available under both names that aider recognizes
+					if (process.env.GOOGLE_API_KEY && !aiderEnv.GEMINI_API_KEY) {
+						aiderEnv.GEMINI_API_KEY = process.env.GOOGLE_API_KEY;
+					}
+
+					if (debug) {
+						console.log(`[DEBUG] Environment variables for aider:`);
+						console.log(`[DEBUG] ANTHROPIC_API_KEY: ${aiderEnv.ANTHROPIC_API_KEY ? 'SET' : 'NOT SET'}`);
+						console.log(`[DEBUG] OPENAI_API_KEY: ${aiderEnv.OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+						console.log(`[DEBUG] GOOGLE_API_KEY: ${aiderEnv.GOOGLE_API_KEY ? 'SET' : 'NOT SET'}`);
+						console.log(`[DEBUG] GEMINI_API_KEY: ${aiderEnv.GEMINI_API_KEY ? 'SET' : 'NOT SET'}`);
+					}
+
+					// Create a child process with spawn, explicitly passing environment
 					const childProcess = spawn('sh', ['-c', aiderCommand], {
-						cwd: currentWorkingDir
+						cwd: currentWorkingDir,
+						env: aiderEnv
 					});
 
 					let stdoutData = '';
