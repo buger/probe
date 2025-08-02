@@ -36,6 +36,7 @@ fn test_parallel_file_extraction() {
         instructions: None,
         keep_input: false,
         prompt: None,
+        symbols: false,
     };
 
     // Run the extraction
@@ -98,6 +99,7 @@ fn function_four() {
         instructions: None,
         keep_input: false,
         prompt: None,
+        symbols: false,
     };
 
     // Run the extraction
@@ -164,6 +166,7 @@ fn test_parallel_extraction_performance() {
         instructions: None,
         keep_input: false,
         prompt: None,
+        symbols: false,
     };
 
     // Run the extraction

@@ -627,6 +627,107 @@ pub fn process_file_for_extraction(
     }
 }
 
+/// Process a single file and extract all symbols from it
+///
+/// This function extracts all symbols (functions, structs, classes, etc.) from a file
+/// and returns a vector of SearchResult objects, one for each symbol found.
+pub fn process_file_for_symbols_extraction(
+    path: &Path,
+    allow_tests: bool,
+) -> Result<Vec<SearchResult>> {
+    use probe_code::extract::symbol_finder::extract_symbols_from_file;
+
+    // Check if debug mode is enabled
+    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+
+    if debug_mode {
+        println!("\n[DEBUG] ===== Processing File for Symbols Extraction =====");
+        println!("[DEBUG] File path: {path:?}");
+        println!("[DEBUG] Allow tests: {allow_tests}");
+    }
+
+    // Check if the file exists
+    if !path.exists() {
+        if debug_mode {
+            println!("[DEBUG] Error: File does not exist");
+        }
+        return Err(anyhow::anyhow!("File does not exist: {:?}", path));
+    }
+
+    // Read the file content
+    let content = fs::read_to_string(path).context(format!("Failed to read file: {path:?}"))?;
+
+    if debug_mode {
+        println!("[DEBUG] File read successfully");
+        println!("[DEBUG] File size: {} bytes", content.len());
+        println!("[DEBUG] Line count: {}", content.lines().count());
+    }
+
+    // Extract symbols from the file
+    let symbols = extract_symbols_from_file(path, &content, allow_tests)?;
+
+    if debug_mode {
+        println!("[DEBUG] Found {} symbols", symbols.len());
+    }
+
+    // Convert symbols to SearchResult objects
+    let mut results = Vec::new();
+    let filename = path
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    for symbol in symbols {
+        // Tokenize the symbol's code content
+        let tokenized_content =
+            crate::ranking::preprocess_text_with_filename(&symbol.code, &filename);
+
+        let result = SearchResult {
+            file: path.to_string_lossy().to_string(),
+            lines: symbol.lines,
+            node_type: symbol.symbol_type,
+            code: symbol.code,
+            matched_by_filename: None,
+            rank: None,
+            score: None,
+            tfidf_score: None,
+            bm25_score: None,
+            tfidf_rank: None,
+            bm25_rank: None,
+            new_score: None,
+            hybrid2_rank: None,
+            combined_score_rank: None,
+            file_unique_terms: None,
+            file_total_matches: None,
+            file_match_rank: None,
+            block_unique_terms: None,
+            block_total_matches: None,
+            parent_file_id: None,
+            block_id: None,
+            matched_keywords: None,
+            tokenized_content: Some(tokenized_content),
+        };
+
+        if debug_mode {
+            println!(
+                "[DEBUG] Added symbol '{}' ({}) at lines {}-{}",
+                symbol.name, result.node_type, result.lines.0, result.lines.1
+            );
+        }
+
+        results.push(result);
+    }
+
+    if debug_mode {
+        println!(
+            "[DEBUG] Converted {} symbols to SearchResult objects",
+            results.len()
+        );
+    }
+
+    Ok(results)
+}
+
 /// Helper to get file extension as a &str
 fn file_extension(path: &Path) -> &str {
     path.extension().and_then(|ext| ext.to_str()).unwrap_or("")

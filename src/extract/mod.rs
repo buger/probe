@@ -21,7 +21,7 @@ pub use formatter::{
     format_and_print_extraction_results, format_extraction_dry_run, format_extraction_results,
 };
 #[allow(unused_imports)]
-pub use processor::process_file_for_extraction;
+pub use processor::{process_file_for_extraction, process_file_for_symbols_extraction};
 #[allow(unused_imports)]
 pub use prompts::PromptTemplate;
 
@@ -61,6 +61,8 @@ pub struct ExtractOptions {
     pub prompt: Option<prompts::PromptTemplate>,
     /// Optional user instructions for LLM models
     pub instructions: Option<String>,
+    /// Whether to extract only symbols instead of full content
+    pub symbols: bool,
 }
 
 /// Handle the extract command
@@ -512,6 +514,7 @@ pub fn handle_extract(options: ExtractOptions) -> Result<()> {
                 "[DEBUG] Specific lines: {:?}",
                 params.specific_lines.as_ref().map(|l| l.len())
             );
+            println!("[DEBUG] Symbols mode: {}", options.symbols);
 
             // Check if file exists
             if params.path.exists() {
@@ -543,47 +546,94 @@ pub fn handle_extract(options: ExtractOptions) -> Result<()> {
             println!("[DEBUG] Test file detected: {:?}", params.path);
         }
 
-        match processor::process_file_for_extraction(
-            &params.path,
-            params.start_line,
-            params.end_line,
-            params.symbol.as_deref(),
-            params.allow_tests,
-            params.context_lines,
-            params.specific_lines.as_ref(),
-        ) {
-            Ok(result) => {
-                if params.debug_mode {
-                    println!("[DEBUG] Successfully extracted code from {:?}", params.path);
-                    println!("[DEBUG] Extracted lines: {:?}", result.lines);
-                    println!("[DEBUG] Node type: {}", result.node_type);
-                    println!("[DEBUG] Code length: {} bytes", result.code.len());
-                    println!(
-                        "[DEBUG] Estimated tokens: {}",
-                        crate::search::search_tokens::count_tokens(&result.code)
-                    );
-                }
+        // Check if symbols mode is enabled
+        if options.symbols {
+            // Use symbols extraction mode
+            match processor::process_file_for_symbols_extraction(&params.path, params.allow_tests) {
+                Ok(symbol_results) => {
+                    if params.debug_mode {
+                        println!(
+                            "[DEBUG] Successfully extracted {} symbols from {:?}",
+                            symbol_results.len(),
+                            params.path
+                        );
+                        for (i, result) in symbol_results.iter().enumerate() {
+                            println!(
+                                "[DEBUG] Symbol {}: {} (lines {}-{})",
+                                i + 1,
+                                result.node_type,
+                                result.lines.0,
+                                result.lines.1
+                            );
+                        }
+                    }
 
-                // Thread-safe addition to results
-                let mut results = results_mutex.lock().unwrap();
-                results.push(result);
+                    // Thread-safe addition to results
+                    let mut results = results_mutex.lock().unwrap();
+                    results.extend(symbol_results);
+                }
+                Err(e) => {
+                    let error_msg = format!(
+                        "Error extracting symbols from file {path:?}: {e}",
+                        path = params.path,
+                        e = e
+                    );
+                    if params.debug_mode {
+                        println!("[DEBUG] Error: {error_msg}");
+                    }
+                    // Only print error messages for non-JSON/XML formats
+                    if params.format != "json" && params.format != "xml" {
+                        eprintln!("{}", error_msg.red());
+                    }
+                    // Thread-safe addition to errors
+                    let mut errors = errors_mutex.lock().unwrap();
+                    errors.push(error_msg);
+                }
             }
-            Err(e) => {
-                let error_msg = format!(
-                    "Error processing file {path:?}: {e}",
-                    path = params.path,
-                    e = e
-                );
-                if params.debug_mode {
-                    println!("[DEBUG] Error: {error_msg}");
+        } else {
+            // Use regular extraction mode
+            match processor::process_file_for_extraction(
+                &params.path,
+                params.start_line,
+                params.end_line,
+                params.symbol.as_deref(),
+                params.allow_tests,
+                params.context_lines,
+                params.specific_lines.as_ref(),
+            ) {
+                Ok(result) => {
+                    if params.debug_mode {
+                        println!("[DEBUG] Successfully extracted code from {:?}", params.path);
+                        println!("[DEBUG] Extracted lines: {:?}", result.lines);
+                        println!("[DEBUG] Node type: {}", result.node_type);
+                        println!("[DEBUG] Code length: {} bytes", result.code.len());
+                        println!(
+                            "[DEBUG] Estimated tokens: {}",
+                            crate::search::search_tokens::count_tokens(&result.code)
+                        );
+                    }
+
+                    // Thread-safe addition to results
+                    let mut results = results_mutex.lock().unwrap();
+                    results.push(result);
                 }
-                // Only print error messages for non-JSON/XML formats
-                if params.format != "json" && params.format != "xml" {
-                    eprintln!("{}", error_msg.red());
+                Err(e) => {
+                    let error_msg = format!(
+                        "Error processing file {path:?}: {e}",
+                        path = params.path,
+                        e = e
+                    );
+                    if params.debug_mode {
+                        println!("[DEBUG] Error: {error_msg}");
+                    }
+                    // Only print error messages for non-JSON/XML formats
+                    if params.format != "json" && params.format != "xml" {
+                        eprintln!("{}", error_msg.red());
+                    }
+                    // Thread-safe addition to errors
+                    let mut errors = errors_mutex.lock().unwrap();
+                    errors.push(error_msg);
                 }
-                // Thread-safe addition to errors
-                let mut errors = errors_mutex.lock().unwrap();
-                errors.push(error_msg);
             }
         }
     });
@@ -796,6 +846,15 @@ pub fn handle_extract(options: ExtractOptions) -> Result<()> {
 
     if debug_mode {
         println!("[DEBUG] ===== Extract Command Completed =====");
+    }
+
+    // Return an error if there were any extraction errors
+    if !errors.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Extraction failed with {} {}",
+            errors.len(),
+            if errors.len() == 1 { "error" } else { "errors" }
+        ));
     }
 
     Ok(())

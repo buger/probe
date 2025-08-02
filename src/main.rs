@@ -415,6 +415,7 @@ async fn main() -> Result<()> {
             keep_input,
             prompt,
             instructions,
+            symbols,
         }) => handle_extract(ExtractOptions {
             files,
             custom_ignores: ignore,
@@ -434,6 +435,7 @@ async fn main() -> Result<()> {
                 })
             }),
             instructions,
+            symbols,
         })?,
         Some(Commands::Query {
             pattern,

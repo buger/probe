@@ -7,6 +7,19 @@ use anyhow::Result;
 use probe_code::models::SearchResult;
 use std::path::Path;
 
+/// Information about a symbol found in code
+#[derive(Debug, Clone)]
+pub struct SymbolInfo {
+    /// Name of the symbol
+    pub name: String,
+    /// Type of the symbol (function, struct, class, etc.)
+    pub symbol_type: String,
+    /// Line range of the symbol (start, end)
+    pub lines: (usize, usize),
+    /// The actual code content of the symbol
+    pub code: String,
+}
+
 /// Find a symbol (function, struct, class, etc.) in a file by name
 ///
 /// This function searches for a symbol by name in a file and returns the code block
@@ -611,4 +624,205 @@ pub fn find_symbol_in_file(
         symbol,
         path
     ))
+}
+
+/// Extract all symbols (functions, structs, classes, etc.) from a file
+///
+/// This function parses a file using tree-sitter and extracts information about
+/// all symbols found in the file, including their names, types, line ranges, and code content.
+///
+/// # Arguments
+///
+/// * `path` - The path to the file to extract symbols from
+/// * `content` - The content of the file
+/// * `allow_tests` - Whether to include test files and test code blocks
+///
+/// # Returns
+///
+/// A vector of SymbolInfo containing details about all symbols found in the file
+pub fn extract_symbols_from_file(
+    path: &Path,
+    content: &str,
+    _allow_tests: bool,
+) -> Result<Vec<SymbolInfo>> {
+    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+
+    if debug_mode {
+        println!("\n[DEBUG] ===== Symbol Extraction =====");
+        println!("[DEBUG] Extracting symbols from file {path:?}");
+        println!(
+            "[DEBUG] Content size: {content_len} bytes",
+            content_len = content.len()
+        );
+        println!(
+            "[DEBUG] Line count: {line_count}",
+            line_count = content.lines().count()
+        );
+    }
+
+    // Get the file extension to determine the language
+    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+
+    if debug_mode {
+        println!("[DEBUG] File extension: {extension}");
+    }
+
+    // Get the language implementation for this extension
+    let language_impl = crate::language::factory::get_language_impl(extension)
+        .ok_or_else(|| anyhow::anyhow!("Unsupported language extension: {}", extension))?;
+
+    if debug_mode {
+        println!("[DEBUG] Language detected: {extension}");
+        println!("[DEBUG] Using tree-sitter to parse file");
+    }
+
+    // Parse the file with tree-sitter using pooled parser for better performance
+    let mut parser = crate::language::get_pooled_parser(extension)
+        .map_err(|e| anyhow::anyhow!("Failed to get pooled parser: {}", e))?;
+
+    let tree = parser
+        .parse(content.as_bytes(), None)
+        .ok_or_else(|| anyhow::anyhow!("Failed to parse file"))?;
+
+    // Return parser to pool for reuse
+    crate::language::return_pooled_parser(extension, parser);
+
+    let root_node = tree.root_node();
+
+    if debug_mode {
+        println!("[DEBUG] File parsed successfully");
+        println!(
+            "[DEBUG] Root node type: {root_node_kind}",
+            root_node_kind = root_node.kind()
+        );
+        println!(
+            "[DEBUG] Root node range: {}:{} - {}:{}",
+            root_node.start_position().row + 1,
+            root_node.start_position().column + 1,
+            root_node.end_position().row + 1,
+            root_node.end_position().column + 1
+        );
+        println!("[DEBUG] Traversing AST to find all symbols");
+    }
+
+    let mut symbols = Vec::new();
+
+    // Function to recursively traverse the AST and collect symbols
+    fn collect_symbols<'a>(
+        node: tree_sitter::Node<'a>,
+        language_impl: &dyn crate::language::language_trait::LanguageImpl,
+        content: &'a [u8],
+        symbols: &mut Vec<SymbolInfo>,
+        debug_mode: bool,
+    ) {
+        // Check if this node is an acceptable parent (function, struct, class, etc.)
+        if language_impl.is_acceptable_parent(&node) {
+            if debug_mode {
+                println!(
+                    "[DEBUG] Found symbol node type '{}' at {}:{}",
+                    node.kind(),
+                    node.start_position().row + 1,
+                    node.start_position().column + 1,
+                );
+            }
+
+            // Try to extract the name of this node
+            let mut cursor = node.walk();
+            let mut symbol_name = None;
+
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier"
+                    || child.kind() == "field_identifier"
+                    || child.kind() == "type_identifier"
+                    || child.kind() == "property_identifier"
+                {
+                    // Get the text of this identifier
+                    if let Ok(name) = child.utf8_text(content) {
+                        symbol_name = Some(name.to_string());
+                        if debug_mode {
+                            println!("[DEBUG] Found symbol name: '{name}'");
+                        }
+                        break;
+                    }
+                }
+
+                // For function_declarator, we need to look deeper
+                if child.kind() == "function_declarator" {
+                    let mut subcursor = child.walk();
+                    for subchild in child.children(&mut subcursor) {
+                        if subchild.kind() == "identifier" {
+                            if let Ok(name) = subchild.utf8_text(content) {
+                                symbol_name = Some(name.to_string());
+                                if debug_mode {
+                                    println!(
+                                        "[DEBUG] Found function name in declarator: '{name}'"
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if symbol_name.is_some() {
+                        break;
+                    }
+                }
+            }
+
+            // If we found a symbol name, create a SymbolInfo entry
+            if let Some(name) = symbol_name {
+                let start_line = node.start_position().row + 1;
+                let end_line = node.end_position().row + 1;
+                let node_text = &content[node.start_byte()..node.end_byte()];
+
+                if debug_mode {
+                    println!(
+                        "[DEBUG] Adding symbol '{}' of type '{}' at lines {}-{}",
+                        name,
+                        node.kind(),
+                        start_line,
+                        end_line
+                    );
+                }
+
+                symbols.push(SymbolInfo {
+                    name,
+                    symbol_type: node.kind().to_string(),
+                    lines: (start_line, end_line),
+                    code: String::from_utf8_lossy(node_text).to_string(),
+                });
+            }
+        }
+
+        // Recursively search in children
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            collect_symbols(child, language_impl, content, symbols, debug_mode);
+        }
+    }
+
+    // Start collecting symbols from the root node
+    collect_symbols(
+        root_node,
+        language_impl.as_ref(),
+        content.as_bytes(),
+        &mut symbols,
+        debug_mode,
+    );
+
+    if debug_mode {
+        println!("\n[DEBUG] ===== Symbol Extraction Complete =====");
+        println!("[DEBUG] Found {} symbols total", symbols.len());
+        for (i, symbol) in symbols.iter().enumerate() {
+            println!(
+                "[DEBUG] Symbol {}: '{}' ({}) at lines {}-{}",
+                i + 1,
+                symbol.name,
+                symbol.symbol_type,
+                symbol.lines.0,
+                symbol.lines.1
+            );
+        }
+    }
+
+    Ok(symbols)
 }

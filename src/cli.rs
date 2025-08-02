@@ -255,6 +255,10 @@ pub enum Commands {
         /// User instructions for LLM models
         #[arg(long = "instructions")]
         instructions: Option<String>,
+
+        /// Extract only symbols (functions, structs, classes, etc.) from files instead of full content
+        #[arg(long = "symbols")]
+        symbols: bool,
     },
 
     /// Search code using AST patterns for precise structural matching

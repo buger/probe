@@ -51,6 +51,7 @@ fn standalone_function() {
         keep_input: false,
         prompt: None,
         instructions: None,
+        symbols: false,
     };
 
     // Call handle_extract
