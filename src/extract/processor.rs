@@ -3,12 +3,14 @@
 //! This module provides functions for processing files and extracting code blocks
 //! based on file paths and optional line numbers.
 use anyhow::{Context, Result};
-use probe_code::extract::symbol_finder::find_symbol_in_file;
+use probe_code::extract::symbol_finder::find_symbol_in_file_with_position;
 use probe_code::language::parser::parse_file_for_code_blocks;
+use probe_code::lsp_integration::{LspClient, LspConfig};
 use probe_code::models::SearchResult;
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use tokio::runtime::Runtime;
 
 /// Process a single file and extract code blocks
 ///
@@ -30,6 +32,34 @@ pub fn process_file_for_extraction(
     context_lines: usize,
     specific_lines: Option<&HashSet<usize>>,
 ) -> Result<SearchResult> {
+    process_file_for_extraction_with_lsp(
+        path,
+        start_line,
+        end_line,
+        symbol,
+        allow_tests,
+        context_lines,
+        specific_lines,
+        false,
+    )
+}
+
+/// Process a single file and extract code blocks with optional LSP integration
+///
+/// This is an enhanced version of the extraction function that optionally
+/// queries LSP servers for additional symbol information like call hierarchy
+/// and references when LSP is enabled.
+#[allow(clippy::too_many_arguments)]
+pub fn process_file_for_extraction_with_lsp(
+    path: &Path,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+    symbol: Option<&str>,
+    allow_tests: bool,
+    context_lines: usize,
+    specific_lines: Option<&HashSet<usize>>,
+    enable_lsp: bool,
+) -> Result<SearchResult> {
     // Check if debug mode is enabled
     let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
 
@@ -42,6 +72,7 @@ pub fn process_file_for_extraction(
         println!("[DEBUG] Allow tests: {allow_tests}");
         println!("[DEBUG] Context lines: {context_lines}");
         println!("[DEBUG] Specific lines: {specific_lines:?}");
+        println!("[DEBUG] LSP enabled: {enable_lsp}");
     }
 
     // Check if the file exists
@@ -67,8 +98,38 @@ pub fn process_file_for_extraction(
         if debug_mode {
             println!("[DEBUG] Looking for symbol: {symbol_name}");
         }
-        // Find the symbol in the file
-        return find_symbol_in_file(path, symbol_name, &content, allow_tests, context_lines);
+
+        // Find the symbol in the file first and get position information
+        let (mut result, symbol_position) = find_symbol_in_file_with_position(
+            path,
+            symbol_name,
+            &content,
+            allow_tests,
+            context_lines,
+        )?;
+
+        // Add LSP information if enabled
+        if enable_lsp {
+            if debug_mode {
+                println!("[DEBUG] LSP enabled, attempting to get symbol info for: {symbol_name}");
+            }
+            // Only attempt LSP if we have position information from tree-sitter
+            if let Some((line, column)) = symbol_position {
+                if debug_mode {
+                    println!(
+                        "[DEBUG] Using position from tree-sitter: line {line}, column {column}"
+                    );
+                }
+                result.lsp_info =
+                    get_lsp_symbol_info_sync(path, symbol_name, line, column, debug_mode);
+            } else if debug_mode {
+                println!(
+                    "[DEBUG] No position information available from tree-sitter, skipping LSP"
+                );
+            }
+        }
+
+        return Ok(result);
     }
 
     // If we have a line range (start_line, end_line), gather AST blocks overlapping that range.
@@ -185,6 +246,7 @@ pub fn process_file_for_extraction(
                     block_id: None,
                     matched_keywords: None,
                     tokenized_content: Some(tokenized_content),
+                    lsp_info: None,
                 })
             }
             _ => {
@@ -229,6 +291,7 @@ pub fn process_file_for_extraction(
                     block_id: None,
                     matched_keywords: None,
                     tokenized_content: Some(tokenized_content),
+                    lsp_info: None,
                 })
             }
         }
@@ -326,6 +389,7 @@ pub fn process_file_for_extraction(
                     block_id: None,
                     matched_keywords: None,
                     tokenized_content: Some(tokenized_content),
+                    lsp_info: None,
                 })
             }
             _ => {
@@ -382,6 +446,7 @@ pub fn process_file_for_extraction(
                     block_id: None,
                     matched_keywords: None,
                     tokenized_content: Some(tokenized_content),
+                    lsp_info: None,
                 })
             }
         }
@@ -428,6 +493,7 @@ pub fn process_file_for_extraction(
                 block_id: None,
                 matched_keywords: None,
                 tokenized_content: Some(tokenized_content),
+                lsp_info: None,
             });
         }
 
@@ -525,6 +591,7 @@ pub fn process_file_for_extraction(
                     block_id: None,
                     matched_keywords: None,
                     tokenized_content: Some(tokenized_content),
+                    lsp_info: None,
                 })
             }
             _ => {
@@ -583,6 +650,7 @@ pub fn process_file_for_extraction(
                     block_id: None,
                     matched_keywords: None,
                     tokenized_content: Some(tokenized_content),
+                    lsp_info: None,
                 })
             }
         }
@@ -623,11 +691,223 @@ pub fn process_file_for_extraction(
             block_id: None,
             matched_keywords: None,
             tokenized_content: Some(tokenized_content),
+            lsp_info: None,
         })
+    }
+}
+
+/// Helper to get LSP information for a symbol at a specific position
+async fn get_lsp_symbol_info(
+    file_path: &Path,
+    symbol_name: &str,
+    line: u32,
+    column: u32,
+    debug_mode: bool,
+) -> Option<serde_json::Value> {
+    if debug_mode {
+        println!("[DEBUG] Attempting to get LSP info for symbol: {symbol_name}");
+    }
+
+    // Create LSP client with timeout to prevent hanging
+    // Find the actual workspace root by looking for Cargo.toml or other project markers
+    let workspace_hint = find_workspace_root(file_path).map(|p| p.to_string_lossy().to_string());
+    let config = LspConfig {
+        use_daemon: true,
+        workspace_hint: workspace_hint.clone(),
+        timeout_ms: 90000, // 90 seconds timeout for complex projects with rust-analyzer
+    };
+
+    if debug_mode {
+        println!(
+            "[DEBUG] LSP config: timeout={}ms, workspace_hint={:?}",
+            config.timeout_ms, config.workspace_hint
+        );
+    }
+
+    let mut client = match LspClient::new(config).await {
+        Ok(client) => client,
+        Err(e) => {
+            if debug_mode {
+                println!("[DEBUG] Failed to create LSP client: {e}");
+            }
+            return None;
+        }
+    };
+
+    // Check if LSP is supported for this file
+    if !client.is_supported(file_path) {
+        if debug_mode {
+            println!("[DEBUG] LSP not supported for file: {file_path:?}");
+        }
+        return None;
+    }
+
+    // Get symbol information with retries
+    let mut attempts = 0;
+    const MAX_ATTEMPTS: u32 = 2;
+
+    while attempts < MAX_ATTEMPTS {
+        attempts += 1;
+        if debug_mode && attempts > 1 {
+            println!("[DEBUG] LSP attempt {attempts} of {MAX_ATTEMPTS}");
+        }
+
+        match client
+            .get_symbol_info(file_path, symbol_name, line, column)
+            .await
+        {
+            Ok(Some(symbol_info)) => {
+                if debug_mode {
+                    println!("[DEBUG] Successfully retrieved LSP info for symbol: {symbol_name}");
+                    if let Some(ref call_hierarchy) = symbol_info.call_hierarchy {
+                        println!(
+                            "[DEBUG] Call hierarchy - incoming calls: {}, outgoing calls: {}",
+                            call_hierarchy.incoming_calls.len(),
+                            call_hierarchy.outgoing_calls.len()
+                        );
+                    }
+                }
+
+                // Convert to JSON for storage
+                match serde_json::to_value(&symbol_info) {
+                    Ok(json) => return Some(json),
+                    Err(e) => {
+                        if debug_mode {
+                            println!("[DEBUG] Failed to serialize LSP info to JSON: {e}");
+                        }
+                        return None;
+                    }
+                }
+            }
+            Ok(None) => {
+                if debug_mode {
+                    println!(
+                        "[DEBUG] No LSP info available for symbol: {symbol_name} (attempt {attempts})"
+                    );
+                }
+                if attempts < MAX_ATTEMPTS {
+                    // Wait a bit before retry
+                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                    continue;
+                }
+                return None;
+            }
+            Err(e) => {
+                if debug_mode {
+                    println!(
+                        "[DEBUG] LSP query failed for symbol {symbol_name} (attempt {attempts}): {e}"
+                    );
+                }
+                if attempts < MAX_ATTEMPTS {
+                    // Wait a bit before retry
+                    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+                    continue;
+                }
+                return None;
+            }
+        }
+    }
+
+    None
+}
+
+/// Helper to get LSP information synchronously using spawn_blocking
+fn get_lsp_symbol_info_sync(
+    file_path: &Path,
+    symbol_name: &str,
+    line: u32,
+    column: u32,
+    debug_mode: bool,
+) -> Option<serde_json::Value> {
+    // Use spawn_blocking to run the async LSP code from within an async context
+    let file_path = file_path.to_path_buf();
+    let symbol_name = symbol_name.to_string();
+    let symbol_name_for_error = symbol_name.clone();
+
+    match std::thread::spawn(move || {
+        // Create a new runtime in a separate thread
+        let rt = match Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => {
+                if debug_mode {
+                    println!("[DEBUG] Failed to create async runtime for LSP: {e}");
+                }
+                return None;
+            }
+        };
+
+        // Use a timeout to prevent blocking indefinitely
+        let timeout_duration = std::time::Duration::from_secs(45); // Reasonable timeout to prevent hanging
+        match rt.block_on(async {
+            tokio::time::timeout(
+                timeout_duration,
+                get_lsp_symbol_info(&file_path, &symbol_name, line, column, debug_mode),
+            )
+            .await
+        }) {
+            Ok(result) => result,
+            Err(_) => {
+                if debug_mode {
+                    println!("[DEBUG] LSP query timed out for symbol: {symbol_name}");
+                }
+                None
+            }
+        }
+    })
+    .join()
+    {
+        Ok(result) => result,
+        Err(_) => {
+            if debug_mode {
+                println!("[DEBUG] LSP thread panicked for symbol: {symbol_name_for_error}");
+            }
+            None
+        }
     }
 }
 
 /// Helper to get file extension as a &str
 fn file_extension(path: &Path) -> &str {
     path.extension().and_then(|ext| ext.to_str()).unwrap_or("")
+}
+
+/// Find the workspace root by walking up the directory tree looking for project markers
+fn find_workspace_root(file_path: &Path) -> Option<PathBuf> {
+    let mut current = file_path.parent()?;
+
+    loop {
+        // Check for Cargo.toml (Rust projects)
+        if current.join("Cargo.toml").exists() {
+            return Some(current.to_path_buf());
+        }
+
+        // Check for package.json (Node.js projects)
+        if current.join("package.json").exists() {
+            return Some(current.to_path_buf());
+        }
+
+        // Check for go.mod (Go projects)
+        if current.join("go.mod").exists() {
+            return Some(current.to_path_buf());
+        }
+
+        // Check for pom.xml or build.gradle (Java projects)
+        if current.join("pom.xml").exists() || current.join("build.gradle").exists() {
+            return Some(current.to_path_buf());
+        }
+
+        // Check for .git directory (Git repository root)
+        if current.join(".git").exists() {
+            return Some(current.to_path_buf());
+        }
+
+        // Move up one directory
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => break, // Reached filesystem root
+        }
+    }
+
+    // Fallback to the file's parent directory
+    file_path.parent().map(|p| p.to_path_buf())
 }

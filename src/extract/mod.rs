@@ -63,6 +63,8 @@ pub struct ExtractOptions {
     pub instructions: Option<String>,
     /// Whether to ignore .gitignore files
     pub no_gitignore: bool,
+    /// Whether to enable LSP integration for call hierarchy and reference graphs
+    pub lsp: bool,
 }
 
 /// Handle the extract command
@@ -473,6 +475,8 @@ pub fn handle_extract(options: ExtractOptions) -> Result<()> {
         context_lines: usize,
         debug_mode: bool,
         format: String,
+        #[allow(dead_code)]
+        lsp: bool,
 
         #[allow(dead_code)]
         original_input: Option<String>,
@@ -496,6 +500,7 @@ pub fn handle_extract(options: ExtractOptions) -> Result<()> {
                 context_lines: options.context_lines,
                 debug_mode,
                 format: options.format.clone(),
+                lsp: options.lsp,
                 original_input: original_input.clone(),
                 system_prompt: system_prompt.clone(),
                 user_instructions: options.instructions.clone(),
@@ -545,7 +550,7 @@ pub fn handle_extract(options: ExtractOptions) -> Result<()> {
             println!("[DEBUG] Test file detected: {:?}", params.path);
         }
 
-        match processor::process_file_for_extraction(
+        match processor::process_file_for_extraction_with_lsp(
             &params.path,
             params.start_line,
             params.end_line,
@@ -553,6 +558,7 @@ pub fn handle_extract(options: ExtractOptions) -> Result<()> {
             params.allow_tests,
             params.context_lines,
             params.specific_lines.as_ref(),
+            params.lsp,
         ) {
             Ok(result) => {
                 if params.debug_mode {

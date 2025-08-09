@@ -1,0 +1,27 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo.lock is tracked for binaries
+# Cargo.lock
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Debug and log files
+*.log
+*.debug
+*.trace
+
+# Claude artifacts
+.claude/
+
+# Temporary files
+*.tmp
+*.temp

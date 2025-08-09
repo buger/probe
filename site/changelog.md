@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🚀 Major Features
 
+#### Language Server Protocol (LSP) Integration
+- **Full LSP support**: Advanced code intelligence through Language Server Protocol
+- **Call hierarchy analysis**: See incoming and outgoing function calls
+- **Multi-language support**: Rust, Python, Go, TypeScript, Java, C/C++ via language servers
+- **High-performance daemon**: Background service managing language server pools
+- **In-memory logging**: Circular buffer system storing last 1000 log entries
+- **IPC communication**: Fast Unix sockets on macOS/Linux, named pipes on Windows
+- **Server pooling**: Reuse warm servers for instant responses
+- **Workspace awareness**: Maintains indexed state across requests
+- **Real-time log following**: Monitor daemon activity with `--follow` flag
+- **Automatic lifecycle management**: Servers spawn, initialize, and shutdown automatically
+- **Concurrent request handling**: Multiple operations without blocking
+- **Smart timeout handling**: Configurable timeouts for different operations
+
 #### Cross-Platform Claude Code Backend Detection
 - **Removed Unix-specific commands**: No more `which` command dependency, works on all platforms
 - **Windows support**: Full support for `.cmd` files and Windows-specific paths

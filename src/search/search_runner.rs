@@ -723,6 +723,7 @@ pub fn perform_probe(options: &SearchOptions) -> Result<LimitedSearchResults> {
                 block_id: None,
                 matched_keywords: None,
                 tokenized_content: None,
+                lsp_info: None,
             });
         }
         let mut limited = apply_limits(res, *max_results, *max_bytes, *max_tokens);

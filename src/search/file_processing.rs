@@ -950,6 +950,7 @@ fn process_uncovered_lines_batch(ctx: &mut BatchProcessingContext) {
                     Some(matched_keywords)
                 },
                 tokenized_content: Some(context_terms),
+                lsp_info: None,
             };
 
             // Add to result creation time
@@ -1495,6 +1496,7 @@ pub fn process_file_with_results(
                             Some(matched_keywords)
                         },
                         tokenized_content: Some(block_terms),
+                        lsp_info: None,
                     };
 
                     let result_creation_duration_value = result_creation_start.elapsed();

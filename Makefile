@@ -95,7 +95,7 @@ windows:
 
 # Test targets
 .PHONY: test
-test: test-unit test-integration test-property test-cli
+test: test-unit test-integration test-property test-cli test-lsp-multi-workspace
 
 .PHONY: test-unit
 test-unit:
@@ -112,6 +112,11 @@ test-property:
 .PHONY: test-cli
 test-cli:
 	$(SET_ENV) $(CARGO) test --test cli_tests
+
+.PHONY: test-lsp-multi-workspace
+test-lsp-multi-workspace:
+	@echo "Running LSP multi-workspace integration tests..."
+	cd lsp-daemon && $(SET_ENV) $(CARGO) test --test integration_multi_workspace
 
 .PHONY: test-all
 test-all:
@@ -186,11 +191,12 @@ help:
 	@echo "  macos-arm         - Build release package for macOS (arm64)"
 	@echo "  windows           - Build release package for Windows"
 	@echo "  clean-release     - Clean release directory"
-	@echo "  test              - Run all tests (unit, integration, property, CLI)"
+	@echo "  test              - Run all tests (unit, integration, property, CLI, LSP multi-workspace)"
 	@echo "  test-unit         - Run unit tests"
 	@echo "  test-integration  - Run integration tests"
 	@echo "  test-property     - Run property tests"
 	@echo "  test-cli          - Run CLI tests"
+	@echo "  test-lsp-multi-workspace - Run LSP multi-workspace integration tests"
 	@echo "  test-all          - Run all tests (including doc tests and examples)"
 	@echo "  lint              - Run clippy linter"
 	@echo "  format            - Format code using rustfmt"
