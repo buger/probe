@@ -52,6 +52,7 @@ fn standalone_function() {
         prompt: None,
         instructions: None,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Call handle_extract

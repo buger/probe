@@ -107,6 +107,7 @@ fn test_basic_negative_compound_word(temp_path: &Path) {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search
@@ -175,6 +176,7 @@ fn test_complex_negative_compound_word(temp_path: &Path) {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search

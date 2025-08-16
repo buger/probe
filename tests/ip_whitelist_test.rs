@@ -32,6 +32,7 @@ fn test_ip_whitelist_stemming() {
         timeout: 30,
         question: None,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Enable debug mode to see the actual terms
@@ -121,6 +122,7 @@ fn test_negative_terms_exclude_files() {
         timeout: 30,
         question: None,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Enable debug mode to see the actual terms

@@ -764,34 +764,40 @@ pub fn parse_file_with_line(input: &str, allow_tests: bool) -> Vec<FilePathInfo>
     if let Some((file_part, symbol)) = cleaned_input.split_once('#') {
         // For symbol references, we don't have line numbers yet
         // We'll need to find the symbol in the file later
-        match resolve_path(file_part) {
-            Ok(path) => {
-                let is_test = is_test_file(&path);
-                if allow_tests || !is_test {
-                    // Symbol can be a simple name or a dot-separated path (e.g., "Class.method")
-                    results.push((path, None, None, Some(symbol.to_string()), None));
-                }
-            }
-            Err(err) => {
-                if std::env::var("DEBUG").unwrap_or_default() == "1" {
-                    println!("DEBUG: Failed to resolve path '{file_part}': {err}");
-                }
+        let path = PathBuf::from(file_part);
 
-                // Fall back to the original path, but validate it first
-                if is_likely_file_path(file_part) {
-                    let path = PathBuf::from(file_part);
-                    // Only add if the file exists or matches common file patterns
-                    if path.exists() || (file_part.contains('/') || file_part.contains('\\')) {
+        // If the path is absolute and exists, use it directly
+        if path.is_absolute() && path.exists() {
+            let is_test = is_test_file(&path);
+            if allow_tests || !is_test {
+                // Symbol can be a simple name or a dot-separated path (e.g., "Class.method")
+                results.push((path, None, None, Some(symbol.to_string()), None));
+            }
+        } else {
+            // Try special path resolution for relative paths or special syntax
+            match resolve_path(file_part) {
+                Ok(resolved_path) => {
+                    let is_test = is_test_file(&resolved_path);
+                    if allow_tests || !is_test {
+                        // Symbol can be a simple name or a dot-separated path (e.g., "Class.method")
+                        results.push((resolved_path, None, None, Some(symbol.to_string()), None));
+                    }
+                }
+                Err(err) => {
+                    if std::env::var("DEBUG").unwrap_or_default() == "1" {
+                        println!("DEBUG: Failed to resolve path '{file_part}': {err}");
+                    }
+
+                    // Fall back to the original path if it exists
+                    if path.exists() {
                         let is_test = is_test_file(&path);
                         if allow_tests || !is_test {
                             // Symbol can be a simple name or a dot-separated path (e.g., "Class.method")
                             results.push((path, None, None, Some(symbol.to_string()), None));
                         }
                     } else if debug_mode {
-                        println!("DEBUG: Skipping non-existent path that doesn't look like a file: {file_part:?}");
+                        println!("DEBUG: Path does not exist: {file_part}");
                     }
-                } else if debug_mode {
-                    println!("DEBUG: Skipping '{file_part}' - appears to be a code construct, not a file path");
                 }
             }
         }
@@ -830,24 +836,46 @@ pub fn parse_file_with_line(input: &str, allow_tests: bool) -> Vec<FilePathInfo>
                         }
                     }
                 } else {
-                    // Check if the path needs special resolution
-                    match resolve_path(file_part) {
-                        Ok(path) => {
-                            let is_test = is_test_file(&path);
-                            if !is_ignored_by_gitignore(&path) && (allow_tests || !is_test) {
-                                results.push((path, Some(start), Some(end), None, None));
-                            }
-                        }
-                        Err(err) => {
-                            if std::env::var("DEBUG").unwrap_or_default() == "1" {
-                                println!("DEBUG: Failed to resolve path '{file_part}': {err}");
-                            }
+                    // First check if the path is absolute or relative
+                    let path = PathBuf::from(file_part);
 
-                            // Fall back to the original path
-                            let path = PathBuf::from(file_part);
-                            let is_test = is_test_file(&path);
-                            if !is_ignored_by_gitignore(&path) && (allow_tests || !is_test) {
-                                results.push((path, Some(start), Some(end), None, None));
+                    // If the path is absolute and exists, use it directly
+                    if path.is_absolute() && path.exists() {
+                        let is_test = is_test_file(&path);
+                        if allow_tests || !is_test {
+                            results.push((path, Some(start), Some(end), None, None));
+                        }
+                    } else {
+                        // Try special path resolution for relative paths or special syntax
+                        match resolve_path(file_part) {
+                            Ok(resolved_path) => {
+                                let is_test = is_test_file(&resolved_path);
+                                if !is_ignored_by_gitignore(&resolved_path)
+                                    && (allow_tests || !is_test)
+                                {
+                                    results.push((
+                                        resolved_path,
+                                        Some(start),
+                                        Some(end),
+                                        None,
+                                        None,
+                                    ));
+                                }
+                            }
+                            Err(err) => {
+                                if std::env::var("DEBUG").unwrap_or_default() == "1" {
+                                    println!("DEBUG: Failed to resolve path '{file_part}': {err}");
+                                }
+
+                                // Fall back to the original path if it exists
+                                if path.exists() {
+                                    let is_test = is_test_file(&path);
+                                    if allow_tests || !is_test {
+                                        results.push((path, Some(start), Some(end), None, None));
+                                    }
+                                } else if debug_mode {
+                                    println!("DEBUG: Path does not exist: {file_part}");
+                                }
                             }
                         }
                     }
@@ -876,30 +904,61 @@ pub fn parse_file_with_line(input: &str, allow_tests: bool) -> Vec<FilePathInfo>
                         }
                     }
                 } else {
-                    // Check if the path needs special resolution
-                    match resolve_path(file_part) {
-                        Ok(path) => {
-                            let is_test = is_test_file(&path);
-                            if !is_ignored_by_gitignore(&path) && (allow_tests || !is_test) {
-                                // Create a HashSet with just this line number
-                                let mut lines_set = HashSet::new();
-                                lines_set.insert(num);
-                                results.push((path, Some(num), None, None, Some(lines_set)));
-                            }
-                        }
-                        Err(err) => {
-                            if std::env::var("DEBUG").unwrap_or_default() == "1" {
-                                println!("DEBUG: Failed to resolve path '{file_part}': {err}");
-                            }
+                    // First check if the path is absolute or relative
+                    let path = PathBuf::from(file_part);
 
-                            // Fall back to the original path
-                            let path = PathBuf::from(file_part);
-                            let is_test = is_test_file(&path);
-                            if !is_ignored_by_gitignore(&path) && (allow_tests || !is_test) {
-                                // Create a HashSet with just this line number
-                                let mut lines_set = HashSet::new();
-                                lines_set.insert(num);
-                                results.push((path, Some(num), None, None, Some(lines_set)));
+                    // If the path is absolute and exists, use it directly
+                    if path.is_absolute() && path.exists() {
+                        let is_test = is_test_file(&path);
+                        if allow_tests || !is_test {
+                            // Create a HashSet with just this line number
+                            let mut lines_set = HashSet::new();
+                            lines_set.insert(num);
+                            results.push((path, Some(num), None, None, Some(lines_set)));
+                        }
+                    } else {
+                        // Try special path resolution for relative paths or special syntax
+                        match resolve_path(file_part) {
+                            Ok(resolved_path) => {
+                                let is_test = is_test_file(&resolved_path);
+                                if !is_ignored_by_gitignore(&resolved_path)
+                                    && (allow_tests || !is_test)
+                                {
+                                    // Create a HashSet with just this line number
+                                    let mut lines_set = HashSet::new();
+                                    lines_set.insert(num);
+                                    results.push((
+                                        resolved_path,
+                                        Some(num),
+                                        None,
+                                        None,
+                                        Some(lines_set),
+                                    ));
+                                }
+                            }
+                            Err(err) => {
+                                if std::env::var("DEBUG").unwrap_or_default() == "1" {
+                                    println!("DEBUG: Failed to resolve path '{file_part}': {err}");
+                                }
+
+                                // Fall back to the original path if it exists
+                                if path.exists() {
+                                    let is_test = is_test_file(&path);
+                                    if allow_tests || !is_test {
+                                        // Create a HashSet with just this line number
+                                        let mut lines_set = HashSet::new();
+                                        lines_set.insert(num);
+                                        results.push((
+                                            path,
+                                            Some(num),
+                                            None,
+                                            None,
+                                            Some(lines_set),
+                                        ));
+                                    }
+                                } else if debug_mode {
+                                    println!("DEBUG: Path does not exist: {file_part}");
+                                }
                             }
                         }
                     }
@@ -922,25 +981,39 @@ pub fn parse_file_with_line(input: &str, allow_tests: bool) -> Vec<FilePathInfo>
                 }
             }
         } else {
-            // Check if the path needs special resolution (e.g., go:github.com/user/repo)
-            match resolve_path(cleaned_input) {
-                Ok(path) => {
-                    let is_test = is_test_file(&path);
-                    if !is_ignored_by_gitignore(&path) && (allow_tests || !is_test) {
-                        results.push((path, None, None, None, None));
-                    }
-                }
-                Err(err) => {
-                    // If resolution fails, log the error and try with the original path
-                    if debug_mode {
-                        println!("DEBUG: Failed to resolve path '{cleaned_input}': {err}");
-                    }
+            // First check if the path is absolute or relative
+            let path = PathBuf::from(cleaned_input);
 
-                    // Fall back to the original path
-                    let path = PathBuf::from(cleaned_input);
-                    let is_test = is_test_file(&path);
-                    if !is_ignored_by_gitignore(&path) && (allow_tests || !is_test) {
-                        results.push((path, None, None, None, None));
+            // If the path is absolute and exists, use it directly
+            if path.is_absolute() && path.exists() {
+                let is_test = is_test_file(&path);
+                if allow_tests || !is_test {
+                    results.push((path, None, None, None, None));
+                }
+            } else {
+                // Try special path resolution for relative paths or special syntax
+                match resolve_path(cleaned_input) {
+                    Ok(resolved_path) => {
+                        let is_test = is_test_file(&resolved_path);
+                        if !is_ignored_by_gitignore(&resolved_path) && (allow_tests || !is_test) {
+                            results.push((resolved_path, None, None, None, None));
+                        }
+                    }
+                    Err(err) => {
+                        // If resolution fails, log the error and try with the original path
+                        if debug_mode {
+                            println!("DEBUG: Failed to resolve path '{cleaned_input}': {err}");
+                        }
+
+                        // Fall back to the original path if it exists
+                        if path.exists() {
+                            let is_test = is_test_file(&path);
+                            if allow_tests || !is_test {
+                                results.push((path, None, None, None, None));
+                            }
+                        } else if debug_mode {
+                            println!("DEBUG: Path does not exist: {cleaned_input}");
+                        }
                     }
                 }
             }

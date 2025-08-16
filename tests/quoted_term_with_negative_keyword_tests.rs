@@ -89,6 +89,7 @@ fn test_quoted_term_with_negative_keyword() {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Print the query for debugging
@@ -172,6 +173,7 @@ fn test_negative_quoted_term() {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Print the query for debugging

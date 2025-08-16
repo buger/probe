@@ -74,6 +74,7 @@ pub struct FileProcessingParams<'a> {
 
     #[allow(dead_code)]
     pub no_merge: bool,
+    pub lsp: bool,
 }
 
 /// Evaluate whether a block of lines satisfies a complex AST query
@@ -980,6 +981,7 @@ fn process_uncovered_lines_batch(ctx: &mut BatchProcessingContext) {
                     Some(matched_keywords)
                 },
                 tokenized_content: Some(context_terms),
+                lsp_info: None,
             };
 
             // Add to result creation time
@@ -1490,6 +1492,8 @@ pub fn process_file_with_results(
                     // Start measuring result creation time
                     let result_creation_start = Instant::now();
 
+                    // For now, we'll leave LSP info as None during initial processing
+                    // LSP info will be added in a post-processing step if enabled
                     let result = SearchResult {
                         file: params.path.to_string_lossy().to_string(),
                         lines: (final_start_line, final_end_line),
@@ -1525,6 +1529,7 @@ pub fn process_file_with_results(
                             Some(matched_keywords)
                         },
                         tokenized_content: Some(block_terms),
+                        lsp_info: None,
                     };
 
                     let result_creation_duration_value = result_creation_start.elapsed();

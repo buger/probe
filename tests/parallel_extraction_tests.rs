@@ -37,6 +37,7 @@ fn test_parallel_file_extraction() {
         keep_input: false,
         prompt: None,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the extraction
@@ -100,6 +101,7 @@ fn function_four() {
         keep_input: false,
         prompt: None,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the extraction
@@ -167,6 +169,7 @@ fn test_parallel_extraction_performance() {
         keep_input: false,
         prompt: None,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the extraction

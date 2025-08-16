@@ -1,0 +1,16 @@
+{
+  "name": "probe-test-typescript",
+  "version": "1.0.0",
+  "description": "Test project for TypeScript LSP integration in probe tests",
+  "main": "src/main.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/main.ts",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.9.2"
+  }
+}

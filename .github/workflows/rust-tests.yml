@@ -41,7 +41,7 @@ jobs:
             ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
             ${{ runner.os }}-cargo-
 
-      - name: Show Rust version
+      - name: Show tool versions
         run: |
           rustc --version
           cargo --version

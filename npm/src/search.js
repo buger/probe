@@ -28,7 +28,8 @@ const SEARCH_FLAG_MAP = {
 	mergeThreshold: '--merge-threshold',
 	session: '--session',
 	timeout: '--timeout',
-	language: '--language'
+	language: '--language',
+	lsp: '--lsp'
 };
 
 /**
@@ -52,6 +53,7 @@ const SEARCH_FLAG_MAP = {
  * @param {string} [options.session] - Session ID for caching results
  * @param {number} [options.timeout] - Timeout in seconds (default: 30)
  * @param {string} [options.language] - Limit search to files of a specific programming language
+ * @param {boolean} [options.lsp] - Use LSP (Language Server Protocol) for enhanced symbol information
  * @param {Object} [options.binaryOptions] - Options for getting the binary
  * @param {boolean} [options.binaryOptions.forceDownload] - Force download even if binary exists
  * @param {string} [options.binaryOptions.version] - Specific version to download

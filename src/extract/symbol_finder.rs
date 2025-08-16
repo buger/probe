@@ -31,6 +31,88 @@ pub fn find_symbol_in_file(
     _allow_tests: bool,
     context_lines: usize,
 ) -> Result<SearchResult> {
+    let (result, _) =
+        find_symbol_in_file_with_position(path, symbol, content, _allow_tests, context_lines)?;
+    Ok(result)
+}
+
+/// Find the position of a specific identifier within a tree-sitter node
+///
+/// This function searches for an identifier with the given name within a node
+/// and returns its position. This is useful for LSP integration where we need
+/// the exact position of the symbol name, not just the start of the node.
+///
+/// Returns (line, column) in 0-indexed coordinates, or None if not found
+fn find_identifier_position_in_node(
+    node: tree_sitter::Node,
+    identifier_name: &str,
+    content: &[u8],
+    debug_mode: bool,
+) -> Option<(u32, u32)> {
+    if debug_mode {
+        println!(
+            "[DEBUG] Searching for identifier '{}' in node type '{}'",
+            identifier_name,
+            node.kind()
+        );
+    }
+
+    // Recursively search for identifier nodes within this node
+    fn find_identifier_recursive(
+        node: tree_sitter::Node,
+        target_name: &str,
+        content: &[u8],
+        debug_mode: bool,
+    ) -> Option<(u32, u32)> {
+        // Check if this node is an identifier and matches our target
+        if node.kind() == "identifier"
+            || node.kind() == "field_identifier"
+            || node.kind() == "type_identifier"
+        {
+            if let Ok(name) = node.utf8_text(content) {
+                if debug_mode {
+                    println!(
+                        "[DEBUG] Found identifier '{}' at {}:{} (looking for '{}')",
+                        name,
+                        node.start_position().row,
+                        node.start_position().column,
+                        target_name
+                    );
+                }
+                if name == target_name {
+                    return Some((
+                        node.start_position().row as u32,
+                        node.start_position().column as u32,
+                    ));
+                }
+            }
+        }
+
+        // Search in children
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if let Some(pos) = find_identifier_recursive(child, target_name, content, debug_mode) {
+                return Some(pos);
+            }
+        }
+
+        None
+    }
+
+    find_identifier_recursive(node, identifier_name, content, debug_mode)
+}
+
+/// Find a symbol in a file and return both the SearchResult and position information
+///
+/// Returns a tuple of (SearchResult, Option<(line, column)>) where the position
+/// is the exact location of the symbol in the file (0-indexed)
+pub fn find_symbol_in_file_with_position(
+    path: &Path,
+    symbol: &str,
+    content: &str,
+    _allow_tests: bool,
+    context_lines: usize,
+) -> Result<(SearchResult, Option<(u32, u32)>)> {
     let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
 
     // Check if the symbol contains a dot, indicating a nested symbol path
@@ -86,31 +168,35 @@ pub fn find_symbol_in_file(
             let tokenized_content =
                 crate::ranking::preprocess_text_with_filename(content, &filename);
 
-            return Ok(SearchResult {
-                file: path.to_string_lossy().to_string(),
-                lines: (1, lines.len()),
-                node_type: "file".to_string(),
-                code: content.to_string(),
-                matched_by_filename: None,
-                rank: None,
-                score: None,
-                tfidf_score: None,
-                bm25_score: None,
-                tfidf_rank: None,
-                bm25_rank: None,
-                new_score: None,
-                hybrid2_rank: None,
-                combined_score_rank: None,
-                file_unique_terms: None,
-                file_total_matches: None,
-                file_match_rank: None,
-                block_unique_terms: None,
-                block_total_matches: None,
-                parent_file_id: None,
-                block_id: None,
-                matched_keywords: None,
-                tokenized_content: Some(tokenized_content),
-            });
+            return Ok((
+                SearchResult {
+                    file: path.to_string_lossy().to_string(),
+                    lines: (1, lines.len()),
+                    node_type: "file".to_string(),
+                    code: content.to_string(),
+                    matched_by_filename: None,
+                    rank: None,
+                    score: None,
+                    tfidf_score: None,
+                    bm25_score: None,
+                    tfidf_rank: None,
+                    bm25_rank: None,
+                    new_score: None,
+                    hybrid2_rank: None,
+                    combined_score_rank: None,
+                    file_unique_terms: None,
+                    file_total_matches: None,
+                    file_match_rank: None,
+                    block_unique_terms: None,
+                    block_total_matches: None,
+                    parent_file_id: None,
+                    block_id: None,
+                    matched_keywords: None,
+                    tokenized_content: Some(tokenized_content),
+                    lsp_info: None,
+                },
+                None,
+            ));
         }
     };
 
@@ -495,7 +581,25 @@ pub fn find_symbol_in_file(
         let tokenized_content =
             crate::ranking::preprocess_text_with_filename(&node_text_str, &filename);
 
-        return Ok(SearchResult {
+        // Extract position information from the found node
+        // Instead of using the node's start position (which might be the "fn" keyword),
+        // find the actual identifier position within the node
+        let (symbol_line, symbol_column) = find_identifier_position_in_node(
+            found_node,
+            symbol_parts[symbol_parts.len() - 1], // Use the last part for nested symbols
+            content.as_bytes(),
+            debug_mode,
+        )
+        .unwrap_or((
+            found_node.start_position().row as u32,
+            found_node.start_position().column as u32,
+        ));
+
+        if debug_mode {
+            println!("[DEBUG] Symbol position: line {symbol_line}, column {symbol_column}");
+        }
+
+        let search_result = SearchResult {
             file: path.to_string_lossy().to_string(),
             lines: (node_start_line, node_end_line),
             node_type: found_node.kind().to_string(),
@@ -519,7 +623,10 @@ pub fn find_symbol_in_file(
             block_id: None,
             matched_keywords: None,
             tokenized_content: Some(tokenized_content),
-        });
+            lsp_info: None,
+        };
+
+        return Ok((search_result, Some((symbol_line, symbol_column))));
     }
 
     // If we couldn't find the symbol using tree-sitter, try a simple text search as fallback
@@ -612,7 +719,7 @@ pub fn find_symbol_in_file(
             .unwrap_or_default();
         let tokenized_content = crate::ranking::preprocess_text_with_filename(&context, &filename);
 
-        return Ok(SearchResult {
+        let search_result = SearchResult {
             file: path.to_string_lossy().to_string(),
             lines: (start_line, end_line),
             node_type: "text_search".to_string(),
@@ -636,7 +743,12 @@ pub fn find_symbol_in_file(
             block_id: None,
             matched_keywords: None,
             tokenized_content: Some(tokenized_content),
-        });
+            lsp_info: None,
+        };
+
+        // For text search fallback, we don't have precise position information
+        // We could estimate it, but it's less reliable than tree-sitter positions
+        return Ok((search_result, None));
     }
 
     // If we get here, we couldn't find the symbol

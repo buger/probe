@@ -123,6 +123,7 @@ fn test_required_term_query() {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Print the temp_path for debugging
@@ -233,6 +234,7 @@ fn test_excluded_term_query() {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Print the query for debugging
@@ -327,6 +329,7 @@ fn test_or_query() {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Print the test files for debugging
@@ -429,6 +432,7 @@ fn test_complex_query_or() {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Print the test files for debugging
@@ -529,6 +533,7 @@ fn test_complex_query_exclusion() {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Print the query for debugging
@@ -629,6 +634,7 @@ fn test_function() {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search

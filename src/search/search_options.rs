@@ -23,4 +23,5 @@ pub struct SearchOptions<'a> {
     pub timeout: u64,
     pub question: Option<&'a str>,
     pub no_gitignore: bool,
+    pub lsp: bool,
 }

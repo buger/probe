@@ -159,6 +159,10 @@ fn build_file_list(
         builder.git_ignore(true);
         builder.git_global(true);
         builder.git_exclude(true);
+        // IMPORTANT: Allow .gitignore files to work even outside git repositories
+        // This makes the ignore crate work consistently regardless of whether
+        // the directory is a git repository or not
+        builder.require_git(false);
     } else {
         builder.git_ignore(false);
         builder.git_global(false);
@@ -742,16 +746,12 @@ mod tests {
     fn test_no_gitignore_parameter() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Initialize git repo to make .gitignore work with the ignore crate
-        std::process::Command::new("git")
-            .arg("init")
-            .current_dir(temp_dir.path())
-            .output()
-            .expect("Failed to initialize git repo");
-
-        // Create a .gitignore file
+        // Create a .gitignore file - no git repository needed!
+        // The ignore crate will respect .gitignore files even without a git repo
+        // when builder.require_git(false) is set
         let gitignore_content = "*.ignored\nignored_dir/\n";
-        fs::write(temp_dir.path().join(".gitignore"), gitignore_content).unwrap();
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        fs::write(&gitignore_path, gitignore_content).unwrap();
 
         // Create files that would normally be ignored by .gitignore
         let ignored_file = temp_dir.path().join("test.ignored");

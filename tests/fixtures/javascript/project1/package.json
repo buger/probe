@@ -1,0 +1,11 @@
+{
+  "name": "probe-test-javascript",
+  "version": "1.0.0",
+  "description": "Test project for JavaScript LSP integration in probe tests",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "jest"
+  },
+  "dependencies": {}
+}

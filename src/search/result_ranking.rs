@@ -462,7 +462,7 @@ fn handle_bert_reranking(
 
     #[cfg(not(feature = "bert-reranker"))]
     {
-        eprintln!("BERT reranker '{}' is not available.", reranker);
+        eprintln!("BERT reranker '{reranker}' is not available.");
         eprintln!("To enable BERT reranking, build with: cargo build --features bert-reranker");
         println!("Falling back to BM25 ranking...");
         fallback_to_bm25_ranking(results, queries, debug_mode, start_time);

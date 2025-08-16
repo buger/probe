@@ -7,6 +7,7 @@ pub mod cache; // New module for caching search results
 pub mod early_ranker; // New module for early BM25 ranking
 pub mod elastic_query;
 pub mod file_list_cache; // New module for caching file lists
+pub mod lsp_enrichment; // New module for LSP integration in search
 pub mod ripgrep_searcher;
 mod search_limiter;
 mod search_options;

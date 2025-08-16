@@ -68,6 +68,8 @@ pub struct SearchResult {
     /// Tokenized version of the code block with filename prepended
     #[allow(dead_code)]
     pub tokenized_content: Option<Vec<String>>,
+    /// LSP-enhanced symbol information (call hierarchy, references, etc.)
+    pub lsp_info: Option<serde_json::Value>,
 }
 
 // Structure to hold node information for merging

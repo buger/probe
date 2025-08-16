@@ -95,7 +95,7 @@ windows:
 
 # Test targets
 .PHONY: test
-test: test-unit test-integration test-property test-cli
+test: test-unit test-integration test-property test-cli test-lsp-multi-workspace test-lsp-comprehensive
 
 .PHONY: test-unit
 test-unit:
@@ -112,6 +112,25 @@ test-property:
 .PHONY: test-cli
 test-cli:
 	$(SET_ENV) $(CARGO) test --test cli_tests
+
+.PHONY: test-lsp-multi-workspace
+test-lsp-multi-workspace:
+	@echo "Running LSP multi-workspace integration tests..."
+	cd lsp-daemon && $(SET_ENV) $(CARGO) test --test integration_multi_workspace
+
+.PHONY: check-lsp-deps
+check-lsp-deps:
+	@echo "Checking LSP dependencies..."
+	@command -v gopls >/dev/null 2>&1 || { echo "❌ gopls not found. Install with: go install golang.org/x/tools/gopls@latest"; exit 1; }
+	@command -v typescript-language-server >/dev/null 2>&1 || { echo "❌ typescript-language-server not found. Install with: npm install -g typescript-language-server typescript"; exit 1; }
+	@echo "✅ All LSP dependencies are available"
+	@echo "   - gopls: $$(gopls version 2>/dev/null || echo 'version check failed')"
+	@echo "   - typescript-language-server: $$(typescript-language-server --version 2>/dev/null || echo 'version check failed')"
+
+.PHONY: test-lsp-comprehensive
+test-lsp-comprehensive: check-lsp-deps
+	@echo "Running comprehensive LSP integration tests..."
+	$(SET_ENV) $(CARGO) test --test lsp_comprehensive_tests
 
 .PHONY: test-all
 test-all:
@@ -186,11 +205,14 @@ help:
 	@echo "  macos-arm         - Build release package for macOS (arm64)"
 	@echo "  windows           - Build release package for Windows"
 	@echo "  clean-release     - Clean release directory"
-	@echo "  test              - Run all tests (unit, integration, property, CLI)"
+	@echo "  test              - Run all tests (unit, integration, property, CLI, LSP multi-workspace, LSP comprehensive)"
 	@echo "  test-unit         - Run unit tests"
 	@echo "  test-integration  - Run integration tests"
 	@echo "  test-property     - Run property tests"
 	@echo "  test-cli          - Run CLI tests"
+	@echo "  test-lsp-multi-workspace - Run LSP multi-workspace integration tests"
+	@echo "  test-lsp-comprehensive - Run comprehensive LSP tests (requires all language servers)"
+	@echo "  check-lsp-deps    - Check that all required LSP dependencies are installed"
 	@echo "  test-all          - Run all tests (including doc tests and examples)"
 	@echo "  lint              - Run clippy linter"
 	@echo "  format            - Format code using rustfmt"

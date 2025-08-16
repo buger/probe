@@ -97,6 +97,7 @@ extern crate self as probe_code;
 pub mod bert_reranker;
 pub mod extract;
 pub mod language;
+pub mod lsp_integration;
 pub mod models;
 pub mod path_resolver;
 pub mod query;

@@ -18,9 +18,9 @@ import { fileURLToPath } from 'url';
 import { search, query, extract, getBinaryPath, setBinaryPath } from '@buger/probe';
 
 // Parse command-line arguments
-function parseArgs(): { timeout?: number } {
+function parseArgs(): { timeout?: number; lsp?: boolean } {
   const args = process.argv.slice(2);
-  const config: { timeout?: number } = {};
+  const config: { timeout?: number; lsp?: boolean } = {};
   
   for (let i = 0; i < args.length; i++) {
     if ((args[i] === '--timeout' || args[i] === '-t') && i + 1 < args.length) {
@@ -32,6 +32,9 @@ function parseArgs(): { timeout?: number } {
         console.error(`Invalid timeout value: ${args[i + 1]}. Using default.`);
       }
       i++; // Skip the next argument
+    } else if (args[i] === '--lsp') {
+      config.lsp = true;
+      console.error('LSP mode enabled');
     } else if (args[i] === '--help' || args[i] === '-h') {
       console.log(`
 Probe MCP Server
@@ -41,6 +44,8 @@ Usage:
 
 Options:
   --timeout, -t <seconds>  Set timeout for search operations (default: 30)
+  --lsp                    Enable LSP (Language Server Protocol) for enhanced features
+                           Automatically initializes language servers for the current workspace
   --help, -h              Show this help message
 `);
       process.exit(0);
@@ -118,6 +123,7 @@ interface SearchCodeArgs {
   session?: string;
   timeout?: number;
   noGitignore?: boolean;
+  lsp?: boolean;
 }
 
 interface QueryCodeArgs {
@@ -140,14 +146,17 @@ interface ExtractCodeArgs {
   format?: 'markdown' | 'plain' | 'json';
   timeout?: number;
   noGitignore?: boolean;
+  lsp?: boolean;
 }
 
 class ProbeServer {
   private server: Server;
   private defaultTimeout: number;
+  private lspEnabled: boolean;
 
-  constructor(timeout: number = 30) {
+  constructor(timeout: number = 30, lspEnabled: boolean = false) {
     this.defaultTimeout = timeout;
+    this.lspEnabled = lspEnabled;
     this.server = new Server(
       {
         name: '@buger/probe-mcp',
@@ -222,6 +231,10 @@ class ProbeServer {
               noGitignore: {
                 type: 'boolean',
                 description: 'Skip .gitignore files (will use PROBE_NO_GITIGNORE environment variable if not set)',
+              },
+              lsp: {
+                type: 'boolean',
+                description: 'Use LSP (Language Server Protocol) for call hierarchy, reference counts, and enhanced symbol information',
               }
             },
             required: ['path', 'query']
@@ -308,6 +321,10 @@ class ProbeServer {
               noGitignore: {
                 type: 'boolean',
                 description: 'Skip .gitignore files (will use PROBE_NO_GITIGNORE environment variable if not set)',
+              },
+              lsp: {
+                type: 'boolean',
+                description: 'Use LSP (Language Server Protocol) for call hierarchy, reference counts, and enhanced symbol information',
               }
             },
             required: ['path', 'files'],
@@ -427,6 +444,12 @@ class ProbeServer {
       } else if (this.defaultTimeout !== undefined) {
         options.timeout = this.defaultTimeout;
       }
+      // Pass LSP flag if enabled globally or per-request
+      if (args.lsp !== undefined) {
+        options.lsp = args.lsp;
+      } else if (this.lspEnabled) {
+        options.lsp = true;
+      }
       
       console.error("Executing search with options:", JSON.stringify(options, null, 2));
       
@@ -524,6 +547,12 @@ class ProbeServer {
       } else if (process.env.PROBE_NO_GITIGNORE) {
         options.noGitignore = process.env.PROBE_NO_GITIGNORE === 'true';
       }
+      // Pass LSP flag if enabled globally or per-request
+      if (args.lsp !== undefined) {
+        options.lsp = args.lsp;
+      } else if (this.lspEnabled) {
+        options.lsp = true;
+      }
       
       // Call extract with the complete options object
       try {
@@ -583,6 +612,48 @@ class ProbeServer {
     // The @buger/probe package now handles binary path management internally
     // We don't need to verify or download the binary in the MCP server anymore
     
+    // Initialize LSP servers for the current workspace if --lsp flag is enabled
+    if (this.lspEnabled) {
+      const workspaceRoot = process.cwd();
+      console.error(`Initializing LSP servers for workspace: ${workspaceRoot}`);
+      
+      try {
+        // Execute probe lsp init command to pre-warm language servers
+        // Use recursive flag to discover nested projects in monorepos
+        const initCmd = process.platform === 'win32' 
+          ? `probe lsp init -w "${workspaceRoot}" --recursive`
+          : `probe lsp init -w '${workspaceRoot}' --recursive`;
+        
+        const { stdout, stderr } = await execAsync(initCmd, {
+          timeout: 10000, // 10 second timeout for initialization - don't wait too long
+          env: { ...process.env }
+        });
+        
+        if (stderr && !stderr.includes('Successfully initialized')) {
+          console.error(`LSP initialization warnings: ${stderr}`);
+        }
+        
+        console.error(`LSP servers initialized successfully for workspace: ${workspaceRoot}`);
+        
+        // Parse initialization output to show what was initialized
+        if (stdout) {
+          const lines = stdout.split('\n');
+          const initializedServers = lines.filter(line => 
+            line.includes('✓') || line.includes('language server')
+          );
+          if (initializedServers.length > 0) {
+            console.error('Initialized language servers:');
+            initializedServers.forEach(line => console.error(`  ${line.trim()}`));
+          }
+        }
+      } catch (error: any) {
+        // Don't fail MCP server startup if LSP initialization fails
+        // LSP will still work with cold start on first use
+        console.error(`Warning: Failed to initialize LSP servers: ${error.message || error}`);
+        console.error('LSP features will still be available but may have slower first-use performance');
+      }
+    }
+    
     // Just connect the server to the transport
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
@@ -590,5 +661,5 @@ class ProbeServer {
   }
 }
 
-const server = new ProbeServer(cliConfig.timeout);
+const server = new ProbeServer(cliConfig.timeout, cliConfig.lsp);
 server.run().catch(console.error);

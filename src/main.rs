@@ -9,6 +9,7 @@ mod cli;
 use cli::{Args, Commands};
 use probe_code::{
     extract::{handle_extract, ExtractOptions},
+    lsp_integration::management::LspManager,
     search::{format_and_print_search_results, perform_probe, SearchOptions},
 };
 
@@ -34,6 +35,7 @@ struct SearchParams {
     timeout: u64,
     question: Option<String>,
     no_gitignore: bool,
+    lsp: bool,
 }
 
 struct BenchmarkParams {
@@ -60,11 +62,17 @@ fn handle_search(params: SearchParams) -> Result<()> {
     let use_frequency = params.frequency_search;
 
     println!("{} {}", "Pattern:".bold().green(), params.pattern);
-    println!(
-        "{} {}",
-        "Path:".bold().green(),
-        params.paths.first().unwrap().display()
-    );
+    // Normalize the search root early. Some downstream code paths are stricter about absolute paths.
+    let raw_root = params.paths.first().unwrap();
+    let canonical_root = if raw_root.exists() {
+        match raw_root.canonicalize() {
+            Ok(p) => p,
+            Err(_) => raw_root.clone(),
+        }
+    } else {
+        raw_root.clone()
+    };
+    println!("{} {}", "Path:".bold().green(), canonical_root.display());
 
     // Show advanced options if they differ from defaults
     let mut advanced_options = Vec::<String>::new();
@@ -121,7 +129,8 @@ fn handle_search(params: SearchParams) -> Result<()> {
     let query = vec![params.pattern.clone()];
 
     let search_options = SearchOptions {
-        path: params.paths.first().unwrap(),
+        // Pass a normalized path so directory roots are always accepted.
+        path: &canonical_root,
         queries: &query,
         files_only: params.files_only,
         custom_ignores: &params.ignore,
@@ -141,6 +150,7 @@ fn handle_search(params: SearchParams) -> Result<()> {
         timeout: params.timeout,
         question: params.question.as_deref(),
         no_gitignore: params.no_gitignore,
+        lsp: params.lsp,
     };
 
     let limited_results = perform_probe(&search_options)?;
@@ -385,6 +395,7 @@ async fn main() -> Result<()> {
                 question: args.question,
                 no_gitignore: args.no_gitignore
                     || std::env::var("PROBE_NO_GITIGNORE").unwrap_or_default() == "1",
+                lsp: args.lsp,
             })?
         }
         Some(Commands::Search {
@@ -409,6 +420,7 @@ async fn main() -> Result<()> {
             timeout,
             question,
             no_gitignore,
+            lsp,
         }) => handle_search(SearchParams {
             pattern,
             paths,
@@ -432,6 +444,7 @@ async fn main() -> Result<()> {
             question,
             no_gitignore: no_gitignore
                 || std::env::var("PROBE_NO_GITIGNORE").unwrap_or_default() == "1",
+            lsp,
         })?,
         Some(Commands::Extract {
             files,
@@ -448,6 +461,7 @@ async fn main() -> Result<()> {
             prompt,
             instructions,
             no_gitignore,
+            lsp,
         }) => handle_extract(ExtractOptions {
             files,
             custom_ignores: ignore,
@@ -469,6 +483,7 @@ async fn main() -> Result<()> {
             instructions,
             no_gitignore: no_gitignore
                 || std::env::var("PROBE_NO_GITIGNORE").unwrap_or_default() == "1",
+            lsp,
         })?,
         Some(Commands::Query {
             pattern,
@@ -519,6 +534,9 @@ async fn main() -> Result<()> {
             baseline,
             fast,
         })?,
+        Some(Commands::Lsp { subcommand }) => {
+            LspManager::handle_command(&subcommand, "color").await?;
+        }
     }
 
     Ok(())

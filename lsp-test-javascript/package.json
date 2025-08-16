@@ -1,0 +1,15 @@
+{
+  "name": "lsp-test-javascript",
+  "version": "1.0.0",
+  "description": "Test project for JavaScript LSP integration",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "dev": "node --inspect src/main.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "dependencies": {},
+  "type": "commonjs"
+}

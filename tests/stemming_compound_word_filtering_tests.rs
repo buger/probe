@@ -102,6 +102,7 @@ fn test_stemming_with_and_query(temp_path: &Path) {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search
@@ -184,6 +185,7 @@ fn test_stemming_with_or_query(temp_path: &Path) {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search
@@ -388,6 +390,7 @@ fn test_compound_word_splitting(temp_path: &Path) {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search
@@ -435,6 +438,7 @@ fn test_compound_word_splitting(temp_path: &Path) {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search
@@ -494,6 +498,7 @@ fn test_negative_compound_word_in_existing_tests(temp_path: &Path) {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search
