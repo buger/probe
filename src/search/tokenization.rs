@@ -845,7 +845,7 @@ pub fn add_special_term(term: &str) {
     special_terms.insert(term.to_lowercase());
 
     // Debug output
-    if std::env::var("DEBUG").unwrap_or_default() == "1" {
+    if std::env::var("PROBE_DEBUG").unwrap_or_default() == "1" {
         println!("DEBUG: Added special term: {term}");
     }
 }
@@ -1177,7 +1177,7 @@ pub fn is_special_case(word: &str) -> bool {
     let special_terms = DYNAMIC_SPECIAL_TERMS.lock().unwrap();
     if special_terms.contains(&lowercase) {
         // Debug output
-        if std::env::var("DEBUG").unwrap_or_default() == "1" {
+        if std::env::var("PROBE_DEBUG").unwrap_or_default() == "1" {
             println!("DEBUG: Found dynamic special term: {lowercase}");
         }
         return true;
@@ -1869,7 +1869,7 @@ pub fn split_camel_case_with_config(input: &str, config: SimdConfig) -> Vec<Stri
         return crate::search::simd_tokenization::simd_split_camel_case_with_config(input, config);
     }
 
-    let _debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let _debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     if input.is_empty() {
         return vec![];

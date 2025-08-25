@@ -25,7 +25,7 @@ pub fn rank_search_results(
     let start_time = Instant::now();
 
     // Check if debug mode is enabled
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     if debug_mode {
         println!(
@@ -462,7 +462,7 @@ fn handle_bert_reranking(
 
     #[cfg(not(feature = "bert-reranker"))]
     {
-        eprintln!("BERT reranker '{}' is not available.", reranker);
+        eprintln!("BERT reranker '{reranker}' is not available.");
         eprintln!("To enable BERT reranking, build with: cargo build --features bert-reranker");
         println!("Falling back to BM25 ranking...");
         fallback_to_bm25_ranking(results, queries, debug_mode, start_time);

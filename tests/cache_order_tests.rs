@@ -64,7 +64,9 @@ fn test_ancestor_cache_performance() {
     println!(
         "\nNote: Without caching, this would be significantly slower due to redundant traversals."
     );
-    println!("The cache prevents repeated upward traversals for nodes within the same acceptable parent block.");
+    println!(
+        "The cache prevents repeated upward traversals for nodes within the same acceptable parent block."
+    );
 }
 
 /// Generates a complex Go file with multiple nested structures to stress-test ancestor lookups

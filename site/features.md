@@ -75,6 +75,19 @@ Probe offers powerful AI integration capabilities that allow you to leverage lar
 - **Streaming Responses**: Real-time AI interaction
 - **OpenTelemetry Tracing**: Comprehensive monitoring and observability for AI interactions
 
+## LSP Integration with Auto-Initialization
+
+Probe integrates with Language Server Protocol (LSP) to provide IDE-level code intelligence with zero configuration:
+
+- **[LSP Features Overview](./lsp-features.md)**: Call hierarchy, definitions, references, and hover information
+- **[Indexing Documentation](./indexing-overview.md)**: Comprehensive guide to the LSP indexing system
+- **Auto-Initialization**: Daemon starts automatically when using `--lsp` flag - no manual setup
+- **Content-Addressed Caching**: 250,000x performance improvements with MD5-based cache invalidation
+- **In-Memory Logging**: 1000 entries stored in memory, no disk I/O overhead
+- **Multi-Language Support**: Rust, TypeScript, Python, Go, Java, and C/C++ with nested workspace discovery
+- **Real-Time Analysis**: Background language servers with connection pooling for instant responses
+- **Indexing System**: Project-wide indexing with progress tracking and language-specific pipelines
+
 ## Usage Modes
 
 Probe can be used in multiple ways, depending on your workflow:

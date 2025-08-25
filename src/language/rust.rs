@@ -26,7 +26,7 @@ impl LanguageImpl for RustLanguage {
     }
 
     fn is_acceptable_parent(&self, node: &Node) -> bool {
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
         // Check for standard Rust items
         if matches!(
@@ -62,7 +62,7 @@ impl LanguageImpl for RustLanguage {
             // Check if this token tree is inside a macro invocation
             if let Some(parent) = node.parent() {
                 if parent.kind() == "macro_invocation" {
-                    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+                    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
                     // For Rust property tests, we want to consider token trees inside macros
                     // as acceptable parents, especially for proptest! macros
@@ -96,7 +96,7 @@ impl LanguageImpl for RustLanguage {
     }
 
     fn is_test_node(&self, node: &Node, source: &[u8]) -> bool {
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
         let node_type = node.kind();
 
         // Rust: Check for #[test] attribute on function_item nodes

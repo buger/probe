@@ -65,9 +65,14 @@ pub fn regular_function() {
         .iter()
         .find(|block| block.node_type.contains("function") || block.node_type == "function_item");
 
-    assert!(function_block.is_some(),
+    assert!(
+        function_block.is_some(),
         "Comment should be merged with function context even when allow_tests=false, found blocks: {:?}",
-        comment_blocks.iter().map(|b| &b.node_type).collect::<Vec<_>>());
+        comment_blocks
+            .iter()
+            .map(|b| &b.node_type)
+            .collect::<Vec<_>>()
+    );
 
     if let Some(func_block) = function_block {
         // The function block should span multiple lines (the entire test function)
@@ -225,9 +230,12 @@ fn test_example() {
         (test_comment_no_tests, test_comment_with_tests)
     {
         // Both should span multiple lines (merged with function context), not just the comment line
-        assert!(block_no_tests.end_row > block_no_tests.start_row,
+        assert!(
+            block_no_tests.end_row > block_no_tests.start_row,
             "Comment should be merged with function context when allow_tests=false, got lines {}-{}",
-            block_no_tests.start_row + 1, block_no_tests.end_row + 1);
+            block_no_tests.start_row + 1,
+            block_no_tests.end_row + 1
+        );
         assert!(
             block_with_tests.end_row > block_with_tests.start_row,
             "Comment should be merged with function context when allow_tests=true, got lines {}-{}",

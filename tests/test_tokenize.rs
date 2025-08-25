@@ -3,11 +3,13 @@ fn main() {
     use probe_code::ranking::tokenize;
 
     // Test strings
-    let test_strings = ["The quick brown fox jumps over the lazy dog",
+    let test_strings = [
+        "The quick brown fox jumps over the lazy dog",
         "function calculateTotal(items) { return items.reduce((sum, item) => sum + item.price, 0); }",
         "class UserController extends BaseController implements UserInterface",
         "Searching for files containing important information",
-        "Fruitlessly searching for the missing variable in the codebase"];
+        "Fruitlessly searching for the missing variable in the codebase",
+    ];
 
     println!("Testing tokenization with stop word removal and stemming:\n");
 

@@ -37,6 +37,8 @@ fn test_parallel_file_extraction() {
         keep_input: false,
         prompt: None,
         no_gitignore: false,
+        lsp: false,
+        include_stdlib: true,
     };
 
     // Run the extraction
@@ -100,6 +102,8 @@ fn function_four() {
         keep_input: false,
         prompt: None,
         no_gitignore: false,
+        lsp: false,
+        include_stdlib: true,
     };
 
     // Run the extraction
@@ -116,7 +120,7 @@ fn test_parallel_extraction_performance() {
     // than sequential extraction for a large number of files
 
     // Skip this test in CI environments where performance might vary
-    if std::env::var("CI").is_ok() {
+    if std::env::var("PROBE_CI").is_ok() {
         return;
     }
 
@@ -167,6 +171,8 @@ fn test_parallel_extraction_performance() {
         keep_input: false,
         prompt: None,
         no_gitignore: false,
+        lsp: false,
+        include_stdlib: true,
     };
 
     // Run the extraction

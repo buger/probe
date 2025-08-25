@@ -43,7 +43,7 @@ impl LanguageImpl for GoLanguage {
     }
 
     fn is_test_node(&self, node: &Node, source: &[u8]) -> bool {
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
         let node_type = node.kind();
 
         // Go: Check function_declaration nodes with names starting with Test
@@ -66,7 +66,7 @@ impl LanguageImpl for GoLanguage {
     }
 
     fn find_parent_function<'a>(&self, node: Node<'a>) -> Option<Node<'a>> {
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
         if debug_mode {
             println!(

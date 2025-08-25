@@ -70,7 +70,7 @@ pub fn get_or_parse_tree(
     let content_hash = compute_content_hash(content);
 
     // Check if debug mode is enabled
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Try to get from cache first
     {
@@ -151,7 +151,7 @@ pub fn get_or_parse_tree_pooled(file_path: &str, content: &str, extension: &str)
     let content_hash = compute_content_hash(content);
 
     // Check if debug mode is enabled
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Try to get from cache first
     {
@@ -227,7 +227,7 @@ pub fn clear_tree_cache() {
     let mut cache = TREE_CACHE
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     if debug_mode {
         eprintln!("[DEBUG] Clearing tree cache ({} entries)", cache.len());
@@ -252,7 +252,7 @@ pub fn invalidate_cache_entry(file_path: &str) {
     let mut cache = TREE_CACHE
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     if cache.pop(file_path).is_some() && debug_mode {
         eprintln!("[DEBUG] Removed file from cache: {file_path}");

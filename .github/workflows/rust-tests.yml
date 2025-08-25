@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CI: true
 
 jobs:
   test:
@@ -41,7 +42,7 @@ jobs:
             ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
             ${{ runner.os }}-cargo-
 
-      - name: Show Rust version
+      - name: Show tool versions
         run: |
           rustc --version
           cargo --version
@@ -49,6 +50,13 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+      - name: Set custom target directory on Windows
+        if: runner.os == 'Windows'
+        run: |
+          echo "CARGO_TARGET_DIR=C:/probe-target" >> "$GITHUB_ENV"
+          mkdir -p C:/probe-target
+        shell: bash
 
       - name: Lint with clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -65,5 +73,5 @@ jobs:
       - name: Run property tests
         run: cargo test --test property_tests
 
-      - name: Run CLI tests
-        run: cargo test --test cli_tests
+      - name: Run CLI tests (Sequential on CI)
+        run: cargo test --test cli_tests -- --test-threads=1

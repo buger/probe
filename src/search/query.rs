@@ -79,7 +79,7 @@ fn format_duration(duration: std::time::Duration) -> String {
 /// Create a QueryPlan from a raw query string. This fully parses the query into an AST,
 /// then extracts all terms (including excluded), and prepares a term-index map.
 pub fn create_query_plan(query: &str, exact: bool) -> Result<QueryPlan, elastic_query::ParseError> {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
     let start_time = Instant::now();
 
     if debug_mode {
@@ -260,7 +260,7 @@ fn collect_all_terms(
     all_terms: &mut Vec<String>,
     excluded: &mut HashSet<String>,
 ) {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     if debug_mode {
         println!("DEBUG: Collecting terms from expression: {expr:?}");
@@ -334,7 +334,7 @@ fn collect_all_terms(
 /// This creates a single pattern that matches any of the terms using case-insensitive matching
 /// without word boundaries for more flexible matching
 pub fn build_combined_pattern(terms: &[String]) -> String {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
     let start_time = Instant::now();
 
     if debug_mode {
@@ -363,7 +363,7 @@ pub fn build_combined_pattern(terms: &[String]) -> String {
 /// This creates a single combined pattern for all terms, regardless of whether they're
 /// required, optional, or negative.
 pub fn create_structured_patterns(plan: &QueryPlan) -> Vec<(String, HashSet<usize>)> {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
     let start_time = Instant::now();
 
     if debug_mode {

@@ -1,0 +1,740 @@
+//! Performance benchmarks for the indexing system
+//!
+//! These benchmarks measure the performance characteristics of the indexing
+//! system including queue operations, file processing throughput, memory usage,
+//! and concurrent access patterns.
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use lsp_daemon::call_graph_cache::{CallGraphCache, CallGraphCacheConfig};
+use lsp_daemon::cache_types::LspOperation;
+use lsp_daemon::indexing::{
+    IndexingConfig, IndexingFeatures, IndexingManager, IndexingQueue, ManagerConfig, Priority,
+    QueueItem,
+};
+use lsp_daemon::lsp_cache::{LspCache, LspCacheConfig};
+use lsp_daemon::lsp_registry::LspRegistry;
+use lsp_daemon::server_manager::SingleServerManager;
+use probe::language::{Language, LanguageDetector};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tempfile::TempDir;
+use tokio::fs;
+use tokio::runtime::Runtime;
+
+/// Helper to create a benchmark runtime
+fn create_runtime() -> Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
+/// Helper to create test files for benchmarking
+async fn create_benchmark_files(temp_dir: &TempDir, file_count: usize) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let root = temp_dir.path();
+
+    for i in 0..file_count {
+        let file_path = root.join(format!("file_{}.rs", i));
+        let content = format!(
+            r#"
+//! File {} for benchmarking
+use std::collections::HashMap;
+
+pub struct BenchmarkStruct{} {{
+    field_{}: i32,
+    field_{}_2: String,
+    field_{}_3: HashMap<String, i32>,
+}}
+
+impl BenchmarkStruct{} {{
+    pub fn new() -> Self {{
+        Self {{
+            field_{}: 42,
+            field_{}_2: "benchmark".to_string(),
+            field_{}_3: HashMap::new(),
+        }}
+    }}
+    
+    pub fn method_{}_1(&self) -> i32 {{
+        self.field_{}
+    }}
+    
+    pub fn method_{}_2(&mut self, value: i32) {{
+        self.field_{} = value;
+    }}
+    
+    pub fn method_{}_3(&self) -> &str {{
+        &self.field_{}_2
+    }}
+    
+    async fn async_method_{}_1(&self) -> Result<String, Box<dyn std::error::Error>> {{
+        Ok(format!("async_result_{}", self.field_{}))
+    }}
+    
+    fn private_method_{}_1(&self) -> bool {{
+        self.field_{} > 0
+    }}
+}}
+
+pub trait BenchmarkTrait{} {{
+    fn trait_method_{}_1(&self) -> i32;
+    fn trait_method_{}_2(&mut self, x: i32, y: i32) -> i32;
+}}
+
+impl BenchmarkTrait{} for BenchmarkStruct{} {{
+    fn trait_method_{}_1(&self) -> i32 {{
+        self.field_{} * 2
+    }}
+    
+    fn trait_method_{}_2(&mut self, x: i32, y: i32) -> i32 {{
+        self.field_{} = x + y;
+        self.field_{}
+    }}
+}}
+
+pub fn standalone_function_{}(a: i32, b: i32) -> i32 {{
+    a + b + {}
+}}
+
+pub const CONSTANT_{}: i32 = {};
+pub static STATIC_{}: &str = "benchmark_{}";
+
+pub enum BenchmarkEnum{} {{
+    Variant1(i32),
+    Variant2 {{ field: String }},
+    Variant3,
+}}
+
+pub type BenchmarkAlias{} = HashMap<String, BenchmarkEnum{}>;
+
+macro_rules! benchmark_macro_{} {{
+    ($x:expr) => {{
+        $x + {}
+    }};
+}}
+
+#[cfg(test)]
+mod tests {{
+    use super::*;
+
+    #[test]
+    fn test_benchmark_struct_{}() {{
+        let instance = BenchmarkStruct{}::new();
+        assert_eq!(instance.method_{}_1(), 42);
+    }}
+    
+    #[tokio::test]
+    async fn test_async_method_{}() {{
+        let instance = BenchmarkStruct{}::new();
+        let result = instance.async_method_{}_1().await;
+        assert!(result.is_ok());
+    }}
+}}
+"#,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i,
+            i
+        );
+
+        fs::write(&file_path, content).await.unwrap();
+        files.push(file_path);
+    }
+
+    files
+}
+
+/// Benchmark queue operations
+fn bench_queue_operations(c: &mut Criterion) {
+    let rt = create_runtime();
+
+    let mut group = c.benchmark_group("queue_operations");
+
+    // Benchmark enqueue operations
+    for item_count in [100, 1000, 10000].iter() {
+        group.throughput(Throughput::Elements(*item_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new("enqueue", item_count),
+            item_count,
+            |b, &size| {
+                b.to_async(&rt).iter(|| async {
+                    let queue = IndexingQueue::unlimited();
+
+                    for i in 0..size {
+                        let priority = match i % 4 {
+                            0 => Priority::Critical,
+                            1 => Priority::High,
+                            2 => Priority::Medium,
+                            _ => Priority::Low,
+                        };
+                        let item =
+                            QueueItem::new(PathBuf::from(format!("/test/{}.rs", i)), priority)
+                                .with_estimated_size(1024);
+                        queue.enqueue(item).await.unwrap();
+                    }
+                });
+            },
+        );
+    }
+
+    // Benchmark dequeue operations
+    for item_count in [100, 1000, 10000].iter() {
+        group.throughput(Throughput::Elements(*item_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new("dequeue", item_count),
+            item_count,
+            |b, &size| {
+                b.to_async(&rt).iter_batched(
+                    // Setup: populate queue
+                    || {
+                        rt.block_on(async {
+                            let queue = IndexingQueue::unlimited();
+                            for i in 0..size {
+                                let priority = match i % 4 {
+                                    0 => Priority::Critical,
+                                    1 => Priority::High,
+                                    2 => Priority::Medium,
+                                    _ => Priority::Low,
+                                };
+                                let item = QueueItem::new(
+                                    PathBuf::from(format!("/test/{}.rs", i)),
+                                    priority,
+                                );
+                                queue.enqueue(item).await.unwrap();
+                            }
+                            queue
+                        })
+                    },
+                    // Benchmark: dequeue all items
+                    |queue| async move {
+                        let mut dequeued = 0;
+                        while let Some(_item) = queue.dequeue().await {
+                            dequeued += 1;
+                        }
+                        assert_eq!(dequeued, size);
+                    },
+                    criterion::BatchSize::SmallInput,
+                );
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark priority ordering maintenance
+fn bench_priority_ordering(c: &mut Criterion) {
+    let rt = create_runtime();
+
+    let mut group = c.benchmark_group("priority_ordering");
+
+    // Test mixed priority workloads
+    for item_count in [1000, 10000].iter() {
+        group.throughput(Throughput::Elements(*item_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new("mixed_priorities", item_count),
+            item_count,
+            |b, &size| {
+                b.to_async(&rt).iter(|| async {
+                    let queue = IndexingQueue::unlimited();
+
+                    // Enqueue items with mixed priorities
+                    for i in 0..size {
+                        let priority = match i % 4 {
+                            0 => Priority::Critical,
+                            1 => Priority::High,
+                            2 => Priority::Medium,
+                            _ => Priority::Low,
+                        };
+                        let item =
+                            QueueItem::new(PathBuf::from(format!("/test/{}.rs", i)), priority);
+                        queue.enqueue(item).await.unwrap();
+                    }
+
+                    // Dequeue and verify ordering
+                    let mut previous_priority = Priority::Critical;
+                    while let Some(item) = queue.dequeue().await {
+                        assert!(item.priority.as_u8() >= previous_priority.as_u8());
+                        if item.priority.as_u8() < previous_priority.as_u8() {
+                            previous_priority = item.priority;
+                        }
+                    }
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark memory usage patterns
+fn bench_memory_tracking(c: &mut Criterion) {
+    let rt = create_runtime();
+
+    let mut group = c.benchmark_group("memory_tracking");
+
+    for item_count in [1000, 10000].iter() {
+        group.throughput(Throughput::Elements(*item_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new("memory_estimation", item_count),
+            item_count,
+            |b, &size| {
+                b.to_async(&rt).iter(|| async {
+                    let queue = IndexingQueue::unlimited();
+
+                    let mut expected_bytes = 0u64;
+                    for i in 0..size {
+                        let file_size = (i * 1024) as u64; // Varying file sizes
+                        expected_bytes += file_size;
+
+                        let item =
+                            QueueItem::low_priority(PathBuf::from(format!("/test/{}.rs", i)))
+                                .with_estimated_size(file_size);
+                        queue.enqueue(item).await.unwrap();
+                    }
+
+                    let metrics = queue.get_metrics().await;
+                    assert_eq!(metrics.estimated_total_bytes, expected_bytes);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark concurrent queue access
+fn bench_concurrent_access(c: &mut Criterion) {
+    let rt = create_runtime();
+
+    let mut group = c.benchmark_group("concurrent_access");
+
+    for worker_count in [2, 4, 8].iter() {
+        group.throughput(Throughput::Elements(1000));
+        group.bench_with_input(
+            BenchmarkId::new("concurrent_workers", worker_count),
+            worker_count,
+            |b, &workers| {
+                b.to_async(&rt).iter(|| async {
+                    let queue = Arc::new(IndexingQueue::unlimited());
+                    let items_per_worker = 1000 / workers;
+
+                    let mut enqueue_handles = Vec::new();
+
+                    // Spawn producer tasks
+                    for worker_id in 0..workers {
+                        let queue_clone = Arc::clone(&queue);
+                        let handle = tokio::spawn(async move {
+                            for i in 0..items_per_worker {
+                                let path = format!("/test/w{}_{}.rs", worker_id, i);
+                                let item = QueueItem::medium_priority(PathBuf::from(path));
+                                queue_clone.enqueue(item).await.unwrap();
+                            }
+                        });
+                        enqueue_handles.push(handle);
+                    }
+
+                    // Spawn consumer task
+                    let consumer_queue = Arc::clone(&queue);
+                    let consumer_handle = tokio::spawn(async move {
+                        let mut consumed = 0;
+                        let total_expected = workers * items_per_worker;
+
+                        while consumed < total_expected {
+                            if let Some(_item) = consumer_queue.dequeue().await {
+                                consumed += 1;
+                            } else {
+                                tokio::task::yield_now().await;
+                            }
+                        }
+                        consumed
+                    });
+
+                    // Wait for all producers
+                    for handle in enqueue_handles {
+                        handle.await.unwrap();
+                    }
+
+                    // Wait for consumer
+                    let consumed = consumer_handle.await.unwrap();
+                    assert_eq!(consumed, workers * items_per_worker);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark file discovery performance
+fn bench_file_discovery(c: &mut Criterion) {
+    let rt = create_runtime();
+
+    let mut group = c.benchmark_group("file_discovery");
+
+    for file_count in [100, 500, 1000].iter() {
+        group.throughput(Throughput::Elements(*file_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new("discover_files", file_count),
+            file_count,
+            |b, &size| {
+                b.to_async(&rt).iter_batched(
+                    // Setup: create test files
+                    || {
+                        rt.block_on(async {
+                            let temp_dir = tempfile::tempdir().unwrap();
+                            create_benchmark_files(&temp_dir, size).await;
+                            temp_dir
+                        })
+                    },
+                    // Benchmark: discover files
+                    |temp_dir| async move {
+                        let language_detector = Arc::new(LanguageDetector::new());
+                        let config = ManagerConfig {
+                            max_workers: 1, // Single-threaded for pure discovery benchmark
+                            memory_budget_bytes: 1024 * 1024 * 1024, // 1GB
+                            memory_pressure_threshold: 0.9,
+                            max_queue_size: size * 2,
+                            exclude_patterns: vec![],
+                            include_patterns: vec![],
+                            max_file_size_bytes: 10 * 1024 * 1024,
+                            enabled_languages: vec![],
+                            incremental_mode: false,
+                            discovery_batch_size: 50,
+                            status_update_interval_secs: 1,
+                        };
+
+                        // Create mock LSP dependencies for benchmarking
+                        let registry = Arc::new(LspRegistry::new().expect("Failed to create registry"));
+                        let child_processes = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+                        let server_manager = Arc::new(SingleServerManager::new_with_tracker(
+                            registry,
+                            child_processes,
+                        ));
+                        
+                        let cache_config = CallGraphCacheConfig {
+                            capacity: 100,
+                            ttl: Duration::from_secs(300),
+                            eviction_check_interval: Duration::from_secs(30),
+                            invalidation_depth: 1,
+                        };
+                        let call_graph_cache = Arc::new(CallGraphCache::new(cache_config));
+                        
+                        let lsp_cache_config = LspCacheConfig {
+                            capacity_per_operation: 100,
+                            ttl: Duration::from_secs(300),
+                            eviction_check_interval: Duration::from_secs(30),
+                            persistent: false,
+                            cache_directory: None,
+                        };
+                        let definition_cache = Arc::new(
+                            LspCache::new(LspOperation::Definition, lsp_cache_config)
+                                .expect("Failed to create definition cache"),
+                        );
+                        let manager = IndexingManager::new(
+                            config,
+                            language_detector,
+                            server_manager,
+                            call_graph_cache,
+                            definition_cache,
+                        );
+                        let start = Instant::now();
+
+                        manager
+                            .start_indexing(temp_dir.path().to_path_buf())
+                            .await
+                            .unwrap();
+
+                        // Wait for file discovery to complete
+                        loop {
+                            let progress = manager.get_progress().await;
+                            if progress.total_files >= size as u64 {
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+
+                        let discovery_time = start.elapsed();
+                        manager.stop_indexing().await.unwrap();
+
+                        discovery_time
+                    },
+                    criterion::BatchSize::SmallInput,
+                );
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark end-to-end indexing throughput
+fn bench_indexing_throughput(c: &mut Criterion) {
+    let rt = create_runtime();
+
+    let mut group = c.benchmark_group("indexing_throughput");
+    group.sample_size(10); // Fewer samples for end-to-end tests
+    group.measurement_time(Duration::from_secs(30));
+
+    for file_count in [50, 100, 200].iter() {
+        group.throughput(Throughput::Elements(*file_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new("full_indexing", file_count),
+            file_count,
+            |b, &size| {
+                b.to_async(&rt).iter_batched(
+                    // Setup: create test files
+                    || {
+                        rt.block_on(async {
+                            let temp_dir = tempfile::tempdir().unwrap();
+                            create_benchmark_files(&temp_dir, size).await;
+                            temp_dir
+                        })
+                    },
+                    // Benchmark: full indexing pipeline
+                    |temp_dir| async move {
+                        let language_detector = Arc::new(LanguageDetector::new());
+                        let config = ManagerConfig {
+                            max_workers: 4,                         // Multi-threaded for realistic performance
+                            memory_budget_bytes: 256 * 1024 * 1024, // 256MB
+                            memory_pressure_threshold: 0.8,
+                            max_queue_size: size * 2,
+                            exclude_patterns: vec![],
+                            include_patterns: vec![],
+                            max_file_size_bytes: 10 * 1024 * 1024,
+                            enabled_languages: vec!["Rust".to_string()],
+                            incremental_mode: false,
+                            discovery_batch_size: 20,
+                            status_update_interval_secs: 1,
+                        };
+
+                        // Create mock LSP dependencies for benchmarking
+                        let registry = Arc::new(LspRegistry::new().expect("Failed to create registry"));
+                        let child_processes = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+                        let server_manager = Arc::new(SingleServerManager::new_with_tracker(
+                            registry,
+                            child_processes,
+                        ));
+                        
+                        let cache_config = CallGraphCacheConfig {
+                            capacity: 100,
+                            ttl: Duration::from_secs(300),
+                            eviction_check_interval: Duration::from_secs(30),
+                            invalidation_depth: 1,
+                        };
+                        let call_graph_cache = Arc::new(CallGraphCache::new(cache_config));
+                        
+                        let lsp_cache_config = LspCacheConfig {
+                            capacity_per_operation: 100,
+                            ttl: Duration::from_secs(300),
+                            eviction_check_interval: Duration::from_secs(30),
+                            persistent: false,
+                            cache_directory: None,
+                        };
+                        let definition_cache = Arc::new(
+                            LspCache::new(LspOperation::Definition, lsp_cache_config)
+                                .expect("Failed to create definition cache"),
+                        );
+                        let manager = IndexingManager::new(
+                            config,
+                            language_detector,
+                            server_manager,
+                            call_graph_cache,
+                            definition_cache,
+                        );
+                        let start = Instant::now();
+
+                        manager
+                            .start_indexing(temp_dir.path().to_path_buf())
+                            .await
+                            .unwrap();
+
+                        // Wait for indexing to complete
+                        loop {
+                            let progress = manager.get_progress().await;
+                            if progress.is_complete() && progress.active_workers == 0 {
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+
+                        let total_time = start.elapsed();
+                        let final_progress = manager.get_progress().await;
+
+                        manager.stop_indexing().await.unwrap();
+
+                        (
+                            total_time,
+                            final_progress.processed_files,
+                            final_progress.symbols_extracted,
+                        )
+                    },
+                    criterion::BatchSize::SmallInput,
+                );
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark queue batch operations
+fn bench_batch_operations(c: &mut Criterion) {
+    let rt = create_runtime();
+
+    let mut group = c.benchmark_group("batch_operations");
+
+    for batch_size in [10, 100, 1000].iter() {
+        group.throughput(Throughput::Elements(*batch_size as u64));
+        group.bench_with_input(
+            BenchmarkId::new("batch_enqueue", batch_size),
+            batch_size,
+            |b, &size| {
+                b.to_async(&rt).iter(|| async {
+                    let queue = IndexingQueue::unlimited();
+
+                    // Create batch of items
+                    let items: Vec<_> = (0..size)
+                        .map(|i| {
+                            let priority = match i % 4 {
+                                0 => Priority::Critical,
+                                1 => Priority::High,
+                                2 => Priority::Medium,
+                                _ => Priority::Low,
+                            };
+                            QueueItem::new(PathBuf::from(format!("/batch/{}.rs", i)), priority)
+                                .with_estimated_size(1024)
+                        })
+                        .collect();
+
+                    // Benchmark batch enqueue
+                    let enqueued = queue.enqueue_batch(items).await.unwrap();
+                    assert_eq!(enqueued, size);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark queue memory overhead
+fn bench_memory_overhead(c: &mut Criterion) {
+    let rt = create_runtime();
+
+    let mut group = c.benchmark_group("memory_overhead");
+
+    for item_count in [1000, 10000, 100000].iter() {
+        group.throughput(Throughput::Elements(*item_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new("queue_memory_usage", item_count),
+            item_count,
+            |b, &size| {
+                b.to_async(&rt).iter(|| async {
+                    let queue = IndexingQueue::unlimited();
+
+                    // Fill queue and measure operations under memory pressure
+                    for i in 0..size {
+                        let item =
+                            QueueItem::low_priority(PathBuf::from(format!("/memory/{}.rs", i)))
+                                .with_estimated_size(4096) // 4KB per item
+                                .with_metadata(serde_json::json!({
+                                    "index": i,
+                                    "large_field": "x".repeat(100), // Add some memory overhead
+                                    "array": vec![i; 10]
+                                }));
+                        queue.enqueue(item).await.unwrap();
+                    }
+
+                    // Verify memory tracking
+                    let metrics = queue.get_metrics().await;
+                    assert_eq!(metrics.total_items, size);
+                    assert!(metrics.estimated_total_bytes > 0);
+
+                    // Dequeue half the items
+                    for _ in 0..(size / 2) {
+                        queue.dequeue().await.unwrap();
+                    }
+
+                    let updated_metrics = queue.get_metrics().await;
+                    assert_eq!(updated_metrics.total_items, size - (size / 2));
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_queue_operations,
+    bench_priority_ordering,
+    bench_memory_tracking,
+    bench_concurrent_access,
+    bench_file_discovery,
+    bench_indexing_throughput,
+    bench_batch_operations,
+    bench_memory_overhead
+);
+
+criterion_main!(benches);

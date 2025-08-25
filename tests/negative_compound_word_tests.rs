@@ -107,6 +107,7 @@ fn test_basic_negative_compound_word(temp_path: &Path) {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search
@@ -145,7 +146,9 @@ fn test_basic_negative_compound_word(temp_path: &Path) {
 
 /// Test complex query with multiple negative terms: "settings AND -network AND -firewall"
 fn test_complex_negative_compound_word(temp_path: &Path) {
-    println!("\n=== Testing complex query with multiple negative terms: settings AND -network AND -firewall ===");
+    println!(
+        "\n=== Testing complex query with multiple negative terms: settings AND -network AND -firewall ==="
+    );
 
     // Create the query
     let query = "settings AND -network AND -firewall";
@@ -175,6 +178,7 @@ fn test_complex_negative_compound_word(temp_path: &Path) {
         question: None,
         exact: false,
         no_gitignore: false,
+        lsp: false,
     };
 
     // Run the search

@@ -1,0 +1,120 @@
+name: LSP Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+  CI: true
+
+jobs:
+  lsp-tests:
+    name: LSP Tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # Temporarily re-disable Windows - Big Brain's PATHEXT fix didn't fully resolve the issue
+        # Need to debug why typescript-language-server.cmd still not detected by Rust tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Setup Rust cache
+        uses: actions/cache@v4
+        timeout-minutes: 5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-lsp-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('rust-toolchain', 'rust-toolchain.toml') || 'stable' }}
+          restore-keys: |
+            ${{ runner.os }}-lsp-cargo-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-lsp-cargo-
+            ${{ runner.os }}-cargo-
+
+      - name: Install Go for LSP tests
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          
+      - name: Install gopls
+        run: go install golang.org/x/tools/gopls@latest
+
+      - name: Install Node.js for TypeScript/JavaScript LSP tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install TypeScript language server
+        run: |
+          npm install -g typescript-language-server typescript
+          echo "NPM global bin path: $(npm config get prefix)"
+
+      - name: Show LSP tool versions
+        run: |
+          rustc --version
+          cargo --version
+          go version
+          gopls version
+          node --version
+          npm --version
+          typescript-language-server --version
+
+      - name: Build Rust project
+        run: cargo build
+
+      - name: Build LSP daemon for tests
+        run: |
+          cd lsp-daemon
+          cargo build
+
+      - name: Run multi-workspace LSP tests
+        run: |
+          cd lsp-daemon
+          cargo test --test integration_multi_workspace
+
+      - name: Run LSP integration tests
+        run: cargo test --test lsp_integration_tests
+
+      - name: Run comprehensive LSP tests
+        env:
+          DEBUG: 1
+        shell: bash
+        run: |
+          echo "=== CI Environment Debug Info ==="
+          echo "CI=$CI"
+          echo "GITHUB_ACTIONS=$GITHUB_ACTIONS"
+          echo "RUNNER_OS=$RUNNER_OS"
+          echo "PATH=$PATH"
+          echo "=== Ensuring npm global binaries are in PATH ==="
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "Windows detected - adding npm global path to system PATH"
+            NPM_GLOBAL=$(npm config get prefix)
+            echo "NPM global prefix: $NPM_GLOBAL"
+            # Convert Windows path format and add to system PATH for test execution
+            NPM_GLOBAL_UNIX=$(cygpath -u "$NPM_GLOBAL" 2>/dev/null || echo "$NPM_GLOBAL")
+            export PATH="$NPM_GLOBAL_UNIX:$NPM_GLOBAL:$PATH"
+            echo "Updated PATH: $PATH"
+            # Also add to Windows system PATH for the test processes
+            echo "$NPM_GLOBAL" >> "$GITHUB_PATH"
+            echo "Added to GITHUB_PATH: $NPM_GLOBAL"
+          fi
+          echo "=== Language Server Versions ==="
+          gopls version || echo "gopls version failed"
+          typescript-language-server --version || echo "typescript-language-server version failed"
+          echo "=== Starting LSP comprehensive tests ==="
+          echo "NOTE: Running tests sequentially with --test-threads=1 to avoid race conditions"
+          cargo test --test lsp_comprehensive_tests -- --nocapture --test-threads=1

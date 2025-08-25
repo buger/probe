@@ -1,0 +1,6 @@
+Content-Length:      154
+
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootUri":"file:///Users/leonidbugaev/conductor/repo/probe/paris/lsp-test-go","capabilities":{}}}
+Content-Length: 52
+
+{"jsonrpc":"2.0","method":"initialized","params":{}}

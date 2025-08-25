@@ -216,6 +216,316 @@ make install-hooks
 - Use `RUST_BACKTRACE=1` for stack traces
 - Profile with `cargo flamegraph` for performance
 
+### LSP Architecture & Debugging
+
+#### Architecture Overview
+The LSP integration uses a daemon-based architecture:
+
+```
+CLI Client → IPC Socket → LSP Daemon → Server Manager → Language Servers
+                              ↓
+                        In-Memory Log Buffer (1000 entries)
+```
+
+**Key Components:**
+- **LSP Daemon**: Persistent background service at `lsp-daemon/src/daemon.rs`
+- **Server Manager**: Pool management at `lsp-daemon/src/server_manager.rs`
+- **LSP Client**: IPC communication at `src/lsp_integration/client.rs`
+- **Protocol Layer**: Request/response types at `lsp-daemon/src/protocol.rs`
+- **Logging System**: In-memory circular buffer at `lsp-daemon/src/logging.rs`
+
+#### Debugging LSP Issues
+
+**CRITICAL: Avoid Rust Build Lock Contention**
+```bash
+# WRONG - This will hang due to build lock conflicts:
+# cargo run -- lsp start -f &
+# cargo run -- lsp status  # <-- This hangs!
+
+# CORRECT - Build first, then use binary:
+cargo build
+./target/debug/probe lsp start -f &
+./target/debug/probe lsp status  # <-- This works!
+
+# OR use the installed binary:
+probe lsp status  # If probe is installed
+```
+
+**1. View LSP daemon logs (in-memory, no files):**
+```bash
+probe lsp logs              # View last 50 log entries
+probe lsp logs -n 100       # View last 100 entries
+probe lsp logs --follow     # Follow logs in real-time (polls every 500ms)
+```
+
+**2. Check daemon status and server pools:**
+```bash
+probe lsp status            # Show daemon status, uptime, and server pools
+probe lsp shutdown          # Stop daemon cleanly
+probe lsp restart           # Restart daemon (clears in-memory logs)
+```
+
+**3. Debug in foreground mode:**
+```bash
+# Run daemon in foreground with debug logging
+./target/debug/probe lsp start -f --log-level debug
+
+# In another terminal, test LSP operations
+./target/debug/probe extract file.rs#symbol --lsp
+```
+
+**4. Common LSP issues and solutions:**
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| **No call hierarchy data** | Language server still indexing | Wait 10-15s for rust-analyzer to index |
+| **Timeout errors** | Large codebase or slow language server | Increase timeout in client config |
+| **Connection refused** | Daemon not running | Daemon auto-starts, check `probe lsp status` |
+| **Empty responses** | Symbol not at function definition | Use exact function name position |
+| **Incomplete message** | Concurrent request conflict | Retry the operation |
+
+**5. Language Server Timings:**
+- **rust-analyzer**: 10-15s initial indexing for large projects
+- **pylsp**: 2-3s for Python projects
+- **gopls**: 3-5s for Go modules
+- **typescript-language-server**: 5-10s for node_modules
+
+**6. Log Analysis Commands:**
+```bash
+# Check for errors
+probe lsp logs -n 200 | grep ERROR
+
+# Monitor specific language server
+probe lsp logs --follow | grep rust-analyzer
+
+# Check initialization timing
+probe lsp logs | grep "initialize.*response"
+
+# View call hierarchy requests
+probe lsp logs | grep "prepareCallHierarchy\|incomingCalls\|outgoingCalls"
+```
+
+**7. Performance Monitoring:**
+The in-memory log buffer stores:
+- Timestamp with microsecond precision
+- Log level (ERROR, WARN, INFO, DEBUG)
+- Source file and line number
+- Target component (e.g., "lsp_protocol", "lsp_stderr")
+- Full message content including JSON-RPC payloads
+
+**8. Daemon Communication:**
+- Uses Unix domain sockets on macOS/Linux: `/var/folders/.../lsp-daemon.sock`
+- Named pipes on Windows: `\\.\pipe\lsp-daemon`
+- Binary protocol with JSON serialization
+- UUID-based request tracking for concurrent operations
+- See `docs/LSP_CLIENT_GUIDE.md` for complete client implementation guide
+
+### Per-Workspace Cache System
+
+#### What is Per-Workspace Caching?
+
+Probe now implements sophisticated per-workspace caching that creates separate cache instances for each workspace, enabling:
+
+**Key Benefits:**
+- **Isolation**: Each project has its own cache, preventing cache pollution between projects
+- **Monorepo Support**: Nested workspaces in monorepos get their own caches automatically
+- **Intelligent Routing**: Files are cached in the nearest workspace (e.g., backend/src/main.rs goes to backend workspace)
+- **Team Collaboration**: Workspace-specific caches can be shared within teams
+- **Resource Management**: LRU eviction of least-used workspace caches when memory limits are reached
+
+#### Cache Directory Structure
+
+```
+~/Library/Caches/probe/lsp/workspaces/         # macOS
+~/.cache/probe/lsp/workspaces/                  # Linux
+%LOCALAPPDATA%/probe/lsp/workspaces/            # Windows
+
+├── abc123_my-rust-project/
+│   ├── call_graph.db                          # sled database
+│   └── metadata.json                          # cache statistics
+├── def456_backend-service/
+│   ├── call_graph.db
+│   └── metadata.json
+└── ghi789_frontend-app/
+    ├── call_graph.db
+    └── metadata.json
+```
+
+**Directory Naming Convention:**
+- Format: `{workspace_hash}_{workspace_name}/`
+- Hash: First 6 chars of SHA256 hash of workspace absolute path
+- Name: Sanitized workspace directory name (safe for filesystems)
+
+#### Cache Resolution Strategy
+
+The system uses a **nearest workspace wins** strategy:
+
+1. **File Analysis**: For any file (e.g., `/project/backend/src/auth.rs`)
+2. **Workspace Discovery**: Walk up directory tree looking for workspace markers
+3. **Workspace Selection**: Choose nearest workspace (`/project/backend/` beats `/project/`)
+4. **Cache Routing**: Route all cache operations to that workspace's cache
+
+**Workspace Detection Markers:**
+- **Rust**: `Cargo.toml`
+- **TypeScript/JavaScript**: `package.json`, `tsconfig.json`
+- **Python**: `pyproject.toml`, `setup.py`, `requirements.txt`
+- **Go**: `go.mod`
+- **Java**: `pom.xml`, `build.gradle`
+- **C/C++**: `CMakeLists.txt`
+- **Generic**: `.git`, `README.md`
+
+#### CLI Commands for Workspace Cache Management
+
+**List workspace caches:**
+```bash
+probe lsp cache list                           # Show all workspace caches
+probe lsp cache list --detailed               # Include cache statistics
+probe lsp cache list --format json            # JSON output for scripting
+```
+
+**View workspace cache information:**
+```bash
+probe lsp cache info                           # Show info for all workspaces
+probe lsp cache info /path/to/workspace        # Show info for specific workspace
+probe lsp cache info --format json            # JSON format
+```
+
+**Clear workspace caches:**
+```bash
+probe lsp cache clear-workspace                # Clear all workspace caches (with confirmation)
+probe lsp cache clear-workspace /path/to/workspace  # Clear specific workspace
+probe lsp cache clear-workspace --force        # Skip confirmation prompt
+```
+
+**Cache statistics:**
+```bash
+probe lsp cache stats                          # Combined stats across all workspaces
+probe lsp cache stats --detailed              # Per-workspace breakdown
+```
+
+#### Configuration
+
+**Environment Variables:**
+```bash
+# Configure workspace cache behavior
+export PROBE_LSP_WORKSPACE_CACHE_MAX=8         # Max concurrent open caches (default: 8)
+export PROBE_LSP_WORKSPACE_CACHE_SIZE_MB=100   # Size limit per workspace (default: 100MB)
+export PROBE_LSP_WORKSPACE_LOOKUP_DEPTH=3      # Max parent dirs to search (default: 3)
+
+# Base cache directory (if you want to change the location)
+export PROBE_LSP_WORKSPACE_CACHE_DIR=/custom/path/to/caches
+```
+
+**Configuration File (Optional):**
+```toml
+# ~/.config/probe/lsp.toml
+[workspace_cache]
+max_open_caches = 8
+cache_size_mb_per_workspace = 100
+max_parent_lookup_depth = 3
+base_cache_dir = "~/Library/Caches/probe/lsp/workspaces"
+
+[workspace_cache.ttl]
+days = 30                    # Clean up entries older than 30 days
+compress = true              # Enable compression for storage
+```
+
+#### Troubleshooting Workspace Cache Issues
+
+**1. Cache Directory Permissions:**
+```bash
+# Check cache directory exists and is writable
+ls -la ~/Library/Caches/probe/lsp/workspaces/
+# Should show drwx------ (700) permissions
+
+# Fix permissions if needed
+chmod 700 ~/Library/Caches/probe/lsp/workspaces/
+```
+
+**2. Cache Not Found for File:**
+```bash
+# Debug workspace resolution for a specific file
+probe lsp debug workspace /path/to/file.rs
+
+# Check which workspace a file maps to
+probe lsp cache info /path/to/project/
+```
+
+**3. Cache Performance Issues:**
+```bash
+# Check if too many caches are open
+probe lsp cache stats --detailed
+
+# Look for cache evictions in logs
+probe lsp logs -n 100 | grep "evicted\|LRU"
+
+# Increase max open caches if needed
+export PROBE_LSP_WORKSPACE_CACHE_MAX=16
+```
+
+**4. Disk Space Issues:**
+```bash
+# Check cache sizes
+probe lsp cache list --detailed
+
+# Clean up old entries
+probe lsp cache compact --clean-expired
+
+# Clear unused workspace caches
+probe lsp cache clear-workspace --force
+```
+
+#### Performance Implications
+
+**Memory Usage:**
+- Each open workspace cache uses ~5-20MB of RAM
+- Default limit of 8 concurrent caches = ~40-160MB max
+- LRU eviction automatically manages memory pressure
+
+**Disk Usage:**
+- Each workspace cache limited to 100MB by default
+- Compressed storage reduces disk usage by ~60-70%
+- Automatic cleanup of entries older than 30 days
+
+**Cache Hit Rates:**
+- Per-workspace caches typically achieve 90-95% hit rates
+- Better isolation means fewer false cache misses
+- Nested workspaces benefit from focused caching
+
+#### Migration from Global Cache
+
+**Automatic Migration:**
+- No manual migration needed
+- Old global cache continues to work as fallback
+- New workspace caches gradually populate with usage
+- Old cache can be cleared after workspace caches are established
+
+**Verifying Migration:**
+```bash
+# Check that workspace caches are being used
+probe lsp cache stats --detailed
+
+# Should show multiple workspace entries, not just global cache
+# Look for entries like "workspace_abc123_my-project"
+```
+
+#### Best Practices
+
+**For Monorepos:**
+- Each sub-project gets its own cache automatically
+- Shared libraries cached in root workspace
+- Configure larger cache limits for monorepos: `export PROBE_LSP_WORKSPACE_CACHE_MAX=16`
+
+**For Development Teams:**
+- Workspace caches can be backed up and shared
+- Export/import commands work on per-workspace basis
+- Cache names include workspace path hash for uniqueness
+
+**For CI/CD:**
+- Workspace caches work great in containerized environments
+- No git dependencies - pure filesystem-based detection
+- Cache sharing between builds of same workspace is automatic
+
 ## Getting Help
 
 1. Search codebase first: `probe search "topic" ./src`
@@ -224,3 +534,17 @@ make install-hooks
 4. Consult docs in `site/` directory
 
 Remember: **Quality > Speed**. Write tests, handle errors properly, and maintain code standards.
+
+## LSP Client Implementation
+
+For detailed information on implementing an LSP client that communicates with the probe daemon, see:
+**[docs/LSP_CLIENT_GUIDE.md](docs/LSP_CLIENT_GUIDE.md)**
+
+This guide includes:
+- Complete client implementation examples (Python, Rust, TypeScript)
+- Wire protocol specification
+- Request/response types
+- Socket path discovery
+- Connection management best practices
+- Debugging tips and common issues# Trigger CI re-run
+# Triggering CI re-run

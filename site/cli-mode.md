@@ -399,3 +399,270 @@ probe-chat --trace-file ./session-traces.jsonl
 # Start chat with full observability
 probe-chat --trace-file --trace-remote http://localhost:4318/v1/traces --allow-edit
 ```
+
+## LSP Integration Commands
+
+Probe provides advanced Language Server Protocol (LSP) integration for IDE-level code intelligence with **auto-initialization**. The LSP system runs as a background daemon providing enhanced code analysis with content-addressed caching for 250,000x performance improvements.
+
+### Auto-Initialization
+
+The `--lsp` flag automatically starts the daemon if needed - no manual setup required:
+
+```bash
+# These commands auto-start the LSP daemon if not running
+probe extract src/main.rs#main --lsp
+probe search "authentication" --lsp
+```
+
+### LSP-Enhanced Commands
+
+Extract code with call hierarchy and semantic information:
+
+```bash
+# Extract function with LSP analysis (auto-starts daemon)
+probe extract src/main.rs#main --lsp
+
+# Search with LSP enrichment (auto-starts daemon)
+probe search "error handling" --lsp
+
+# Extract with context and call graph
+probe extract src/auth.rs#authenticate --lsp --context 5
+
+# Search specific symbol types
+probe search "handler" --lsp --symbol-type function
+```
+
+### LSP Daemon Management
+
+**Note**: LSP management commands do NOT auto-initialize to prevent loops.
+
+```bash
+# Check daemon status and server pools
+probe lsp status
+
+# List available language servers
+probe lsp languages
+
+# Health check
+probe lsp ping
+
+# Start daemon manually (usually not needed)
+probe lsp start
+
+# Start in foreground with debug logging
+probe lsp start -f --log-level debug
+
+# Restart daemon (clears in-memory logs)
+probe lsp restart
+
+# Graceful shutdown
+probe lsp shutdown
+
+# View in-memory logs (1000 entries, no files)
+probe lsp logs
+
+# Follow logs in real-time
+probe lsp logs --follow
+
+# View more log entries
+probe lsp logs -n 200
+
+# Show version information
+probe lsp version
+```
+
+### LSP Workspace Initialization
+
+Initialize language servers for optimal performance:
+
+```bash
+# Initialize current workspace
+probe lsp init
+
+# Initialize with specific languages
+probe lsp init --languages rust,typescript
+
+# Recursive initialization of nested workspaces
+probe lsp init --recursive
+
+# Initialize with watchdog monitoring
+probe lsp init --watchdog
+```
+
+### LSP Indexing System
+
+Powerful project-wide indexing with progress tracking:
+
+```bash
+# Start indexing current workspace
+probe lsp index
+
+# Index specific languages
+probe lsp index --languages rust,typescript
+
+# Index recursively with custom settings
+probe lsp index --recursive --max-workers 8 --memory-budget 1024
+
+# Index and wait for completion
+probe lsp index --wait
+
+# Show indexing status
+probe lsp index-status
+
+# Show detailed per-file progress
+probe lsp index-status --detailed
+
+# Follow indexing progress
+probe lsp index-status --follow
+
+# Stop ongoing indexing
+probe lsp index-stop
+
+# Force stop indexing
+probe lsp index-stop --force
+```
+
+### LSP Index Configuration
+
+Configure indexing behavior:
+
+```bash
+# Show current configuration
+probe lsp index-config show
+
+# Set configuration options
+probe lsp index-config set --max-workers 16 --memory-budget 2048
+
+# Set file patterns
+probe lsp index-config set --exclude "*.log,target/*" --include "*.rs,*.ts"
+
+# Enable incremental indexing
+probe lsp index-config set --incremental true
+
+# Reset to defaults
+probe lsp index-config reset
+```
+
+### LSP Cache Management
+
+Content-addressed cache provides massive performance improvements:
+
+```bash
+# View cache statistics and hit rates
+probe lsp cache stats
+
+# Clear all cache entries
+probe lsp cache clear
+
+# Clear specific operation cache
+probe lsp cache clear --operation CallHierarchy
+probe lsp cache clear --operation Definition
+probe lsp cache clear --operation References
+probe lsp cache clear --operation Hover
+
+# Export cache for debugging
+probe lsp cache export
+
+# Export specific operation cache
+probe lsp cache export --operation CallHierarchy
+
+# Workspace cache management
+probe lsp cache list                           # List all workspace caches
+probe lsp cache list --detailed               # Include statistics
+probe lsp cache info /path/to/workspace       # Show workspace cache info
+probe lsp cache clear-workspace               # Clear all workspace caches
+probe lsp cache clear-workspace /path/to/workspace  # Clear specific workspace
+```
+
+### Performance & Troubleshooting
+
+```bash
+# Check for build lock conflicts (important!)
+# WRONG - causes hangs:
+cargo run -- lsp status
+
+# CORRECT - build first:
+cargo build
+./target/debug/probe lsp status
+
+# Monitor cache performance
+probe lsp cache stats
+
+# Debug with logs
+probe lsp logs --follow | grep ERROR
+
+# Test connectivity
+probe lsp ping
+
+# Workspace cache troubleshooting
+# Check which workspace a file belongs to
+probe lsp debug workspace /path/to/file.rs
+
+# Check workspace cache permissions
+ls -la ~/Library/Caches/probe/lsp/workspaces/
+
+# Monitor cache evictions (if performance issues)
+probe lsp logs -n 100 | grep "evicted\|LRU"
+
+# Increase workspace cache limits for large monorepos
+export PROBE_LSP_WORKSPACE_CACHE_MAX=16
+export PROBE_LSP_WORKSPACE_CACHE_SIZE_MB=200
+```
+
+### Workspace Cache Troubleshooting
+
+**Common Issues and Solutions:**
+
+**1. File not found in expected workspace cache:**
+```bash
+# Debug which workspace the file maps to
+probe lsp debug workspace /path/to/problematic/file.rs
+
+# Check workspace detection markers
+ls /path/to/project/   # Look for Cargo.toml, package.json, etc.
+
+# Verify cache directory structure
+probe lsp cache list --detailed
+```
+
+**2. Cache performance degradation in monorepos:**
+```bash
+# Check if too many workspace caches are competing for memory
+probe lsp cache stats --detailed
+
+# Increase limits for large monorepos
+export PROBE_LSP_WORKSPACE_CACHE_MAX=16
+export PROBE_LSP_WORKSPACE_CACHE_SIZE_MB=200
+
+# Restart daemon to apply new settings
+probe lsp restart
+```
+
+**3. Cache directory permission issues:**
+```bash
+# Check cache directory permissions
+ls -ld ~/Library/Caches/probe/lsp/workspaces/
+
+# Fix permissions if needed (should be 700)
+chmod 700 ~/Library/Caches/probe/lsp/workspaces/
+chmod -R 600 ~/Library/Caches/probe/lsp/workspaces/*/
+```
+
+**4. Disk space issues with workspace caches:**
+```bash
+# Check cache sizes and clean up old entries
+probe lsp cache list --detailed
+probe lsp cache compact --clean-expired
+
+# Clear unused workspace caches
+probe lsp cache clear-workspace --force
+
+# Reduce per-workspace cache size limits
+export PROBE_LSP_WORKSPACE_CACHE_SIZE_MB=50
+export PROBE_LSP_WORKSPACE_CACHE_TTL_DAYS=14
+```
+
+For comprehensive LSP documentation, see:
+- **[LSP Features Overview](./lsp-features.md)** - Quick introduction to LSP capabilities
+- **[Indexing Overview](./indexing-overview.md)** - Complete LSP indexing system guide
+- **[LSP CLI Reference](./indexing-cli-reference.md)** - Detailed command documentation

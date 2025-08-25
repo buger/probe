@@ -39,7 +39,7 @@ impl LanguageImpl for PythonLanguage {
     }
 
     fn is_test_node(&self, node: &Node, source: &[u8]) -> bool {
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
         let node_type = node.kind();
 
         // Python: Check function_definition nodes with names starting with test_

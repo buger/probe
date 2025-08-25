@@ -95,15 +95,19 @@
 extern crate self as probe_code;
 
 pub mod bert_reranker;
+pub mod config;
 pub mod extract;
 pub mod language;
+pub mod lsp_integration;
 pub mod models;
 pub mod path_resolver;
+pub mod path_safety;
 pub mod query;
 pub mod ranking;
 pub mod search;
 pub mod simd_ranking;
 pub mod simd_test;
+pub mod utils;
 pub mod version;
 
 // Re-export commonly used types for convenience

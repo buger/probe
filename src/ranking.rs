@@ -117,7 +117,7 @@ pub fn precompute_idfs(
     dfs: &HashMap<String, usize>,
     n_docs: usize,
 ) -> HashMap<String, f64> {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     if debug_mode {
         println!(
@@ -279,7 +279,7 @@ pub fn score_expr_bm25_optimized(expr: &Expr, params: &PrecomputedBm25Params) ->
 pub fn rank_documents(params: &RankingParams) -> Vec<(usize, f64)> {
     use std::cmp::Ordering;
 
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // 1) Parse the user query into an AST (Expr)
     //    If your code uses parse_query(...) from `elastic_query.rs`, do:
@@ -432,7 +432,7 @@ pub fn rank_documents(params: &RankingParams) -> Vec<(usize, f64)> {
 pub fn rank_documents_simd(params: &RankingParams) -> Vec<(usize, f64)> {
     use std::cmp::Ordering;
 
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     if debug_mode {
         println!("DEBUG: Using SIMD-optimized ranking");
@@ -590,7 +590,7 @@ pub fn rank_documents_simd(params: &RankingParams) -> Vec<(usize, f64)> {
 pub fn rank_documents_simd_simple(params: &RankingParams) -> Vec<(usize, f64)> {
     use std::cmp::Ordering;
 
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     if debug_mode {
         println!("DEBUG: Using simple SIMD-only ranking (no boolean logic)");
@@ -691,7 +691,7 @@ pub fn compute_tf_df_from_tokenized(
     tokenized_docs: &[Vec<String>],
     query_token_map: &QueryTokenMap,
 ) -> TfDfResult {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     if debug_mode {
         println!("DEBUG: Starting parallel TF-DF computation from pre-tokenized content for {docs_len} documents", docs_len = tokenized_docs.len());

@@ -124,7 +124,10 @@ fn test_search_determinism_with_user_path() {
             }
         }
 
-        panic!("Search results are non-deterministic! Found {} different result patterns. This indicates a bug in the search engine that needs to be fixed.", unique_results.len());
+        panic!(
+            "Search results are non-deterministic! Found {} different result patterns. This indicates a bug in the search engine that needs to be fixed.",
+            unique_results.len()
+        );
     } else {
         println!("\n✅ DETERMINISTIC BEHAVIOR CONFIRMED");
         println!("All {iterations} iterations returned identical results");
@@ -158,7 +161,9 @@ fn test_user_keyword_filename_vs_content_matching() {
     println!("Testing filename vs content matching hypothesis");
     println!("Path contains 'user' keyword: {fixture_path:?}");
     println!("Query contains 'user' keyword: \"yaml workflow agent multi-agent user input\"");
-    println!("File content does NOT contain these keywords (AssemblyInfo.cs has only copyright and assembly info)\n");
+    println!(
+        "File content does NOT contain these keywords (AssemblyInfo.cs has only copyright and assembly info)\n"
+    );
 
     // Run a single search to see what happens
     let output = Command::new(&binary_path)
@@ -285,7 +290,9 @@ fn test_search_determinism_with_multiple_conditions() {
             );
         } else {
             // Fail the test if we detect non-deterministic behavior
-            panic!("Non-deterministic behavior detected with {name} configuration! This needs to be fixed.");
+            panic!(
+                "Non-deterministic behavior detected with {name} configuration! This needs to be fixed."
+            );
         }
     }
 }

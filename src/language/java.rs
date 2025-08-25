@@ -41,7 +41,7 @@ impl LanguageImpl for JavaLanguage {
     }
 
     fn is_test_node(&self, node: &Node, source: &[u8]) -> bool {
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
         let node_type = node.kind();
 
         // Java: Check method_declaration nodes with @Test annotation

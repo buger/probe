@@ -56,6 +56,7 @@ export default defineConfig({
             { text: 'What is Probe?', link: '/features' },
             { text: 'Installation', link: '/installation' },
             { text: 'Quick Start', link: '/quick-start' },
+            { text: 'Configuration', link: '/configuration' },
             { text: 'Language Support', link: '/language-support-overview' },
             { text: 'Supported Languages', link: '/supported-languages' },
             { text: 'How It Works', link: '/how-it-works' },
@@ -77,6 +78,16 @@ export default defineConfig({
             { text: 'Search Reference', link: '/search-reference' },
             { text: 'Code Extraction', link: '/code-extraction' },
             { text: 'Adding Languages', link: '/adding-languages' },
+          ]},
+          { text: 'LSP Indexing System', items: [
+            { text: 'LSP Features Overview', link: '/lsp-features' },
+            { text: 'Indexing Overview', link: '/indexing-overview' },
+            { text: 'Architecture Guide', link: '/indexing-architecture' },
+            { text: 'Configuration Reference', link: '/indexing-configuration' },
+            { text: 'CLI Reference', link: '/indexing-cli-reference' },
+            { text: 'Language-Specific Guide', link: '/indexing-languages' },
+            { text: 'Performance Guide', link: '/indexing-performance' },
+            { text: 'API Reference', link: '/indexing-api-reference' },
           ]}
         ]
       },
@@ -92,6 +103,7 @@ export default defineConfig({
           { text: 'What is Probe?', link: '/features' },
           { text: 'Installation', link: '/installation' },
           { text: 'Quick Start', link: '/quick-start' },
+          { text: 'Configuration', link: '/configuration' },
           { text: 'Language Support', link: '/language-support-overview' },
           { text: 'Supported Languages', link: '/supported-languages' },
           { text: 'How It Works', link: '/how-it-works' },
@@ -123,6 +135,20 @@ export default defineConfig({
           { text: 'Search Reference', link: '/search-reference' },
           { text: 'Code Extraction', link: '/code-extraction' },
           { text: 'Adding Languages', link: '/adding-languages' },
+        ]
+      },
+      {
+        text: 'LSP Indexing System',
+        collapsed: false,
+        items: [
+          { text: 'LSP Features Overview', link: '/lsp-features' },
+          { text: 'Indexing Overview', link: '/indexing-overview' },
+          { text: 'Architecture Guide', link: '/indexing-architecture' },
+          { text: 'Configuration Reference', link: '/indexing-configuration' },
+          { text: 'CLI Reference', link: '/indexing-cli-reference' },
+          { text: 'Language-Specific Guide', link: '/indexing-languages' },
+          { text: 'Performance Guide', link: '/indexing-performance' },
+          { text: 'API Reference', link: '/indexing-api-reference' },
         ]
       },
       {

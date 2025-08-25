@@ -325,7 +325,7 @@ fn find_acceptable_child<'a>(node: Node<'a>, language_impl: &dyn LanguageImpl) -
 
 /// Finds the immediate next node that follows a given node in the AST
 fn find_immediate_next_node(node: Node<'_>) -> Option<Node<'_>> {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // First try direct next sibling
     if let Some(next) = node.next_sibling() {
@@ -1832,7 +1832,7 @@ pub fn parse_file_for_code_blocks_with_tree(
     pre_parsed_tree: Option<tree_sitter::Tree>,
 ) -> Result<Vec<CodeBlock>> {
     // Check for debug mode
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Get the appropriate language implementation
     let language_impl = match get_language_impl(extension) {

@@ -43,6 +43,8 @@ fn format_extraction_internal(
                     #[serde(serialize_with = "serialize_lines_as_array")]
                     lines: (usize, usize),
                     node_type: &'a str,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    lsp_info: Option<&'a serde_json::Value>,
                 }
 
                 // Helper function to serialize lines as an array
@@ -66,6 +68,7 @@ fn format_extraction_internal(
                         file: &r.file,
                         lines: r.lines,
                         node_type: &r.node_type,
+                        lsp_info: r.lsp_info.as_ref(),
                     })
                     .collect();
 
@@ -104,6 +107,8 @@ fn format_extraction_internal(
                     code: &'a str,
                     #[serde(skip_serializing_if = "Option::is_none")]
                     original_input: Option<&'a str>,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    lsp_info: Option<&'a serde_json::Value>,
                 }
 
                 // Helper function to serialize lines as an array
@@ -132,6 +137,7 @@ fn format_extraction_internal(
                         // you can uncomment the line below, but it's typically at the root.
                         // original_input: r.original_input.as_deref(),
                         original_input: None,
+                        lsp_info: r.lsp_info.as_ref(),
                     })
                     .collect();
 
@@ -316,6 +322,157 @@ fn format_extraction_internal(
                         } else {
                             writeln!(output, "Type: {}", result.node_type.cyan())?;
                         }
+                    }
+
+                    // Show LSP information if available
+                    if let Some(lsp_info) = &result.lsp_info {
+                        match format {
+                            "markdown" => {
+                                writeln!(output, "### LSP Information")?;
+                            }
+                            _ => {
+                                writeln!(output, "LSP Information:")?;
+                            }
+                        }
+
+                        match serde_json::from_value::<
+                            probe_code::lsp_integration::EnhancedSymbolInfo,
+                        >(lsp_info.clone())
+                        {
+                            Ok(enhanced_symbol) => {
+                                // Always show a Call Hierarchy heading so users see the section even if empty
+                                if format == "markdown" {
+                                    writeln!(output, "#### Call Hierarchy")?;
+                                } else {
+                                    writeln!(output, "  Call Hierarchy:")?;
+                                }
+
+                                // Display call hierarchy if available
+                                if let Some(call_hierarchy) = &enhanced_symbol.call_hierarchy {
+                                    if !call_hierarchy.incoming_calls.is_empty() {
+                                        if format == "markdown" {
+                                            writeln!(output, "#### Incoming Calls:")?;
+                                        } else {
+                                            writeln!(output, "  Incoming Calls:")?;
+                                        }
+
+                                        for call in &call_hierarchy.incoming_calls {
+                                            let call_desc = format!(
+                                                "{} ({}:{})",
+                                                call.name, call.file_path, call.line
+                                            );
+                                            if format == "markdown" {
+                                                writeln!(output, "  - {call_desc}")?;
+                                            } else {
+                                                writeln!(output, "    - {}", call_desc.green())?;
+                                            }
+                                        }
+                                    }
+
+                                    if !call_hierarchy.outgoing_calls.is_empty() {
+                                        if format == "markdown" {
+                                            writeln!(output, "#### Outgoing Calls:")?;
+                                        } else {
+                                            writeln!(output, "  Outgoing Calls:")?;
+                                        }
+
+                                        for call in &call_hierarchy.outgoing_calls {
+                                            let call_desc = format!(
+                                                "{} ({}:{})",
+                                                call.name, call.file_path, call.line
+                                            );
+                                            if format == "markdown" {
+                                                writeln!(output, "  - {call_desc}")?;
+                                            } else {
+                                                writeln!(output, "    - {}", call_desc.green())?;
+                                            }
+                                        }
+                                    }
+
+                                    if call_hierarchy.incoming_calls.is_empty()
+                                        && call_hierarchy.outgoing_calls.is_empty()
+                                    {
+                                        if format == "markdown" {
+                                            writeln!(
+                                                output,
+                                                "  No call hierarchy information available"
+                                            )?;
+                                        } else {
+                                            writeln!(
+                                                output,
+                                                "  {}",
+                                                "No call hierarchy information available".dimmed()
+                                            )?
+                                        }
+                                    }
+                                }
+
+                                // Display references if available
+                                if !enhanced_symbol.references.is_empty() {
+                                    if format == "markdown" {
+                                        writeln!(output, "#### References:")?;
+                                    } else {
+                                        writeln!(output, "  References:")?;
+                                    }
+
+                                    for reference in &enhanced_symbol.references {
+                                        let ref_desc = format!(
+                                            "{}:{} - {}",
+                                            reference.file_path, reference.line, reference.context
+                                        );
+                                        if format == "markdown" {
+                                            writeln!(output, "  - {ref_desc}")?;
+                                        } else {
+                                            writeln!(output, "    - {}", ref_desc.blue())?;
+                                        }
+                                    }
+                                }
+
+                                // Display documentation if available
+                                if let Some(doc) = &enhanced_symbol.documentation {
+                                    if format == "markdown" {
+                                        writeln!(output, "#### Documentation:")?;
+                                        writeln!(output, "```")?;
+                                        writeln!(output, "{doc}")?;
+                                        writeln!(output, "```")?;
+                                    } else {
+                                        writeln!(output, "  Documentation:")?;
+                                        writeln!(output, "    {}", doc.dimmed())?
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                // Debug: log deserialization error
+                                if std::env::var("PROBE_DEBUG").unwrap_or_default() == "1" {
+                                    eprintln!("[DEBUG] Failed to deserialize LSP info: {e}");
+                                }
+                                // Fallback: display raw JSON if we can't parse it
+                                if format == "markdown" {
+                                    writeln!(output, "#### Call Hierarchy")?;
+                                    writeln!(output, "  No call hierarchy information available")?;
+                                    writeln!(output, "```json")?;
+                                    writeln!(
+                                        output,
+                                        "{}",
+                                        serde_json::to_string_pretty(lsp_info)?
+                                    )?;
+                                    writeln!(output, "```")?;
+                                } else {
+                                    writeln!(output, "  Call Hierarchy:")?;
+                                    writeln!(
+                                        output,
+                                        "    {}",
+                                        "No call hierarchy information available".dimmed()
+                                    )?;
+                                    writeln!(
+                                        output,
+                                        "  Raw LSP Data: {}",
+                                        serde_json::to_string_pretty(lsp_info)?.dimmed()
+                                    )?;
+                                }
+                            }
+                        }
+                        writeln!(output)?;
                     }
 
                     // In dry-run, we do NOT print the code

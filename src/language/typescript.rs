@@ -58,7 +58,7 @@ impl LanguageImpl for TypeScriptLanguage {
 
     fn is_test_node(&self, node: &Node, source: &[u8]) -> bool {
         // TypeScript test detection is the same as JavaScript
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
         let node_type = node.kind();
 
         // TypeScript: Check for describe/it/test blocks

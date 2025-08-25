@@ -16,6 +16,9 @@ Cargo.lock
 # YAML files
 *.yml
 *.yaml
+# Exception for GitHub workflows
+!.github/workflows/*.yml
+!.github/workflows/*.yaml
 
 # Node.js specific ignores
 node_modules

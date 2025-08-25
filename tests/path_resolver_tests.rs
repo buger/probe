@@ -10,7 +10,9 @@ fn check_js_module(module: &str) -> bool {
     if Command::new("node").arg("--version").output().is_err() {
         return false;
     }
-    let script = format!("try {{ require.resolve('{module}/package.json'); process.exit(0); }} catch (e) {{ process.exit(1); }}");
+    let script = format!(
+        "try {{ require.resolve('{module}/package.json'); process.exit(0); }} catch (e) {{ process.exit(1); }}"
+    );
     Command::new("node")
         .arg("-e")
         .arg(&script)
@@ -94,7 +96,9 @@ fn test_go_stdlib_resolution_with_subpath_file() {
 fn test_go_stdlib_resolution_with_subpath_dir() {
     if !check_go_module("net/http/pprof") {
         // Check if pprof sub-package is resolvable
-        println!("Skipping test_go_stdlib_resolution_with_subpath_dir: Go or 'net/http/pprof' not available");
+        println!(
+            "Skipping test_go_stdlib_resolution_with_subpath_dir: Go or 'net/http/pprof' not available"
+        );
         return;
     }
     // Our current heuristic treats "net/http/pprof" as the module. Let's test that directly first.
@@ -142,7 +146,9 @@ fn test_go_external_resolution_with_subpath() {
         // Check if the sub-package itself is resolvable by go list
         if !check_go_module(module) {
             // If not, check if base module exists before skipping entirely
-            println!("Skipping test_go_external_resolution_with_subpath: Go or base module '{module}' not available");
+            println!(
+                "Skipping test_go_external_resolution_with_subpath: Go or base module '{module}' not available"
+            );
             return;
         }
         // Base module exists, but sub-package doesn't resolve directly. Our split logic should handle this.
@@ -150,7 +156,9 @@ fn test_go_external_resolution_with_subpath() {
             "Note: '{full_module_path}' not directly resolvable by 'go list', testing split logic."
         );
     } else if !check_go_module(module) {
-        println!("Skipping test_go_external_resolution_with_subpath: Go or base module '{module}' not available");
+        println!(
+            "Skipping test_go_external_resolution_with_subpath: Go or base module '{module}' not available"
+        );
         return;
     }
 
@@ -237,7 +245,11 @@ fn test_js_resolution_with_subpath_file() {
     };
 
     if !expected_path.exists() {
-        println!("Skipping test_js_resolution_with_subpath_file: Expected subpath '{}' does not exist in module '{}'", expected_path.display(), module);
+        println!(
+            "Skipping test_js_resolution_with_subpath_file: Expected subpath '{}' does not exist in module '{}'",
+            expected_path.display(),
+            module
+        );
         // Optional: Assert error instead? Or just skip? Let's skip.
         return;
     }
@@ -280,7 +292,11 @@ fn test_js_resolution_with_subpath_dir() {
         }
     };
     if !expected_path.exists() || !expected_path.is_dir() {
-        println!("Skipping test_js_resolution_with_subpath_dir: Expected subpath dir '{}' does not exist in module '{}'", expected_path.display(), module);
+        println!(
+            "Skipping test_js_resolution_with_subpath_dir: Expected subpath dir '{}' does not exist in module '{}'",
+            expected_path.display(),
+            module
+        );
         return;
     }
 
@@ -346,7 +362,11 @@ fn test_js_scoped_resolution_with_subpath() {
         }
     };
     if !expected_path.exists() {
-        println!("Skipping test_js_scoped_resolution_with_subpath: Expected subpath '{}' does not exist in module '{}'", expected_path.display(), module);
+        println!(
+            "Skipping test_js_scoped_resolution_with_subpath: Expected subpath '{}' does not exist in module '{}'",
+            expected_path.display(),
+            module
+        );
         return;
     }
 

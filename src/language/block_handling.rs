@@ -4,7 +4,7 @@ pub fn merge_code_blocks(
     code_blocks: Vec<crate::models::CodeBlock>,
 ) -> Vec<crate::models::CodeBlock> {
     let mut merged_blocks: Vec<crate::models::CodeBlock> = Vec::new();
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     for block in code_blocks {
         if let Some(last) = merged_blocks.last_mut() {

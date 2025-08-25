@@ -1,0 +1,58 @@
+[package]
+name = "lsp-daemon"
+version = "0.1.0"
+edition = "2021"
+authors = ["Leonid Bugaev <leonsbox@gmail.com>"]
+description = "Multi-language LSP server pool daemon for instant code intelligence"
+license = "MIT"
+repository = "https://github.com/buger/probe"
+keywords = ["lsp", "language-server", "daemon", "pool", "code-intelligence"]
+categories = ["development-tools", "command-line-utilities"]
+
+[[bin]]
+name = "lsp-daemon"
+path = "src/main.rs"
+
+[lib]
+name = "lsp_daemon"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+tokio = { version = "1", features = ["full", "net"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dashmap = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+url = "2"
+toml = "0.8"
+dirs = "5"
+which = "6"
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+tempfile = "3"
+chrono = "0.4"
+fs2 = "0.4"
+md5 = "0.7"
+sled = { version = "0.34", features = ["compression"] }
+bincode = "1.3"
+ignore = "0.4"
+futures = "0.3"
+num_cpus = "1"
+flate2 = "1.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["winbase", "namedpipeapi", "fileapi", "handleapi", "winnt", "processthreadsapi"] }
+
+[build-dependencies]
+chrono = "0.4"
+
+[dev-dependencies]
+tempfile = "3.14.0"
+rand = "0.8"

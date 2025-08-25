@@ -12,7 +12,7 @@ pub fn format_and_print_search_results(
     format: &str,
     query_plan: Option<&QueryPlan>,
 ) {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Count valid results (with non-empty file names)
     let valid_results: Vec<&SearchResult> = results.iter().filter(|r| !r.file.is_empty()).collect();
@@ -77,6 +77,198 @@ pub fn format_and_print_search_results(
                         println!("```{extension}");
                         println!("{code}", code = result.code);
                         println!("```");
+                    }
+
+                    // Display LSP information if available (for both full file and partial results)
+                    if let Some(lsp_info) = &result.lsp_info {
+                        if let Some(obj) = lsp_info.as_object() {
+                            if let Some(symbols) = obj.get("symbols").and_then(|v| v.as_array()) {
+                                // Merged LSP information with multiple symbols
+                                println!("Merged LSP Information:");
+                                println!("  Symbols: {}", symbols.len());
+
+                                for sym in symbols {
+                                    if let Some(sobj) = sym.as_object() {
+                                        let name = sobj
+                                            .get("symbol")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown");
+                                        let node_type = sobj
+                                            .get("node_type")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let (start, end) = sobj
+                                            .get("range")
+                                            .and_then(|r| r.get("lines"))
+                                            .and_then(|arr| arr.as_array())
+                                            .and_then(|a| {
+                                                if a.len() == 2 {
+                                                    Some((
+                                                        a[0].as_u64().unwrap_or(0),
+                                                        a[1].as_u64().unwrap_or(0),
+                                                    ))
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .unwrap_or((0, 0));
+
+                                        println!("  • Symbol: {name}");
+                                        if start > 0 || end > 0 {
+                                            println!("    Lines: {start}-{end}");
+                                        }
+                                        if !node_type.is_empty() {
+                                            println!("    Type: {node_type}");
+                                        }
+
+                                        if let Some(ch) =
+                                            sobj.get("call_hierarchy").and_then(|v| v.as_object())
+                                        {
+                                            if let Some(incoming) =
+                                                ch.get("incoming_calls").and_then(|v| v.as_array())
+                                            {
+                                                if !incoming.is_empty() {
+                                                    println!("    Incoming Calls:");
+                                                    for call in incoming {
+                                                        if let Some(call_obj) = call.as_object() {
+                                                            let name = call_obj
+                                                                .get("name")
+                                                                .and_then(|v| v.as_str())
+                                                                .unwrap_or("unknown");
+                                                            let file_path = call_obj
+                                                                .get("file_path")
+                                                                .and_then(|v| v.as_str())
+                                                                .unwrap_or("");
+                                                            let line = call_obj
+                                                                .get("line")
+                                                                .and_then(|v| v.as_u64())
+                                                                .unwrap_or(0);
+                                                            let file_path = file_path
+                                                                .strip_prefix("file://")
+                                                                .unwrap_or(file_path);
+                                                            println!("      - {name} ({file_path}:{line})");
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if let Some(outgoing) =
+                                                ch.get("outgoing_calls").and_then(|v| v.as_array())
+                                            {
+                                                if !outgoing.is_empty() {
+                                                    println!("    Outgoing Calls:");
+                                                    for call in outgoing {
+                                                        if let Some(call_obj) = call.as_object() {
+                                                            let name = call_obj
+                                                                .get("name")
+                                                                .and_then(|v| v.as_str())
+                                                                .unwrap_or("unknown");
+                                                            let file_path = call_obj
+                                                                .get("file_path")
+                                                                .and_then(|v| v.as_str())
+                                                                .unwrap_or("");
+                                                            let line = call_obj
+                                                                .get("line")
+                                                                .and_then(|v| v.as_u64())
+                                                                .unwrap_or(0);
+                                                            let file_path = file_path
+                                                                .strip_prefix("file://")
+                                                                .unwrap_or(file_path);
+                                                            println!("      - {name} ({file_path}:{line})");
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if let Some(refs_count) =
+                                            sobj.get("references_count").and_then(|v| v.as_u64())
+                                        {
+                                            if refs_count > 0 {
+                                                println!("    References: {refs_count}");
+                                            }
+                                        }
+                                        // Small gap between symbols
+                                        println!();
+                                    }
+                                }
+                            } else {
+                                // Single-symbol legacy shape (backward compatible)
+                                println!("LSP Information:");
+
+                                // Display call hierarchy if available
+                                if let Some(call_hierarchy) =
+                                    obj.get("call_hierarchy").and_then(|v| v.as_object())
+                                {
+                                    // Incoming calls
+                                    if let Some(incoming) = call_hierarchy
+                                        .get("incoming_calls")
+                                        .and_then(|v| v.as_array())
+                                    {
+                                        if !incoming.is_empty() {
+                                            println!("  Incoming Calls:");
+                                            for call in incoming {
+                                                if let Some(call_obj) = call.as_object() {
+                                                    let name = call_obj
+                                                        .get("name")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("unknown");
+                                                    let file_path = call_obj
+                                                        .get("file_path")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("");
+                                                    let line = call_obj
+                                                        .get("line")
+                                                        .and_then(|v| v.as_u64())
+                                                        .unwrap_or(0);
+                                                    let file_path = file_path
+                                                        .strip_prefix("file://")
+                                                        .unwrap_or(file_path);
+                                                    println!("    - {name} ({file_path}:{line})");
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Outgoing calls
+                                    if let Some(outgoing) = call_hierarchy
+                                        .get("outgoing_calls")
+                                        .and_then(|v| v.as_array())
+                                    {
+                                        if !outgoing.is_empty() {
+                                            println!("  Outgoing Calls:");
+                                            for call in outgoing {
+                                                if let Some(call_obj) = call.as_object() {
+                                                    let name = call_obj
+                                                        .get("name")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("unknown");
+                                                    let file_path = call_obj
+                                                        .get("file_path")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("");
+                                                    let line = call_obj
+                                                        .get("line")
+                                                        .and_then(|v| v.as_u64())
+                                                        .unwrap_or(0);
+                                                    let file_path = file_path
+                                                        .strip_prefix("file://")
+                                                        .unwrap_or(file_path);
+                                                    println!("    - {name} ({file_path}:{line})");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Display references count if available
+                                if let Some(refs_count) =
+                                    obj.get("references_count").and_then(|v| v.as_u64())
+                                {
+                                    if refs_count > 0 {
+                                        println!("  References: {refs_count}");
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 if debug_mode {
@@ -392,6 +584,210 @@ fn format_and_print_color_results(
 
         println!();
 
+        // Display LSP information if available
+        if let Some(lsp_info) = &result.lsp_info {
+            if debug_mode {
+                eprintln!("DEBUG: Found LSP info for result");
+            }
+            // Parse the JSON structure directly
+            if let Some(obj) = lsp_info.as_object() {
+                if let Some(symbols) = obj.get("symbols").and_then(|v| v.as_array()) {
+                    // Merged LSP information with multiple symbols
+                    println!("{}", "Merged LSP Information:".bold().blue());
+                    println!("  {} {}", "Symbols:".bold(), symbols.len());
+
+                    for sym in symbols {
+                        if let Some(sobj) = sym.as_object() {
+                            let name = sobj
+                                .get("symbol")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            let node_type =
+                                sobj.get("node_type").and_then(|v| v.as_str()).unwrap_or("");
+
+                            // Optional range display
+                            let (start, end) = sobj
+                                .get("range")
+                                .and_then(|r| r.get("lines"))
+                                .and_then(|arr| arr.as_array())
+                                .and_then(|a| {
+                                    if a.len() == 2 {
+                                        Some((
+                                            a[0].as_u64().unwrap_or(0),
+                                            a[1].as_u64().unwrap_or(0),
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or((0, 0));
+
+                            println!(
+                                "  • {} {}{}",
+                                "Symbol:".bold(),
+                                name,
+                                if start > 0 || end > 0 {
+                                    format!("   Lines: {start}-{end}")
+                                } else {
+                                    "".to_string()
+                                }
+                            );
+
+                            if !node_type.is_empty() {
+                                println!("    Type: {node_type}");
+                            }
+
+                            if let Some(ch) = sobj.get("call_hierarchy").and_then(|v| v.as_object())
+                            {
+                                // Incoming calls
+                                if let Some(incoming) =
+                                    ch.get("incoming_calls").and_then(|v| v.as_array())
+                                {
+                                    if !incoming.is_empty() {
+                                        println!("    {}", "Incoming Calls:".bold());
+                                        for call in incoming {
+                                            if let Some(call_obj) = call.as_object() {
+                                                let name = call_obj
+                                                    .get("name")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("unknown");
+                                                let file_path = call_obj
+                                                    .get("file_path")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("");
+                                                let line = call_obj
+                                                    .get("line")
+                                                    .and_then(|v| v.as_u64())
+                                                    .unwrap_or(0);
+                                                let file_path = file_path
+                                                    .strip_prefix("file://")
+                                                    .unwrap_or(file_path);
+                                                println!("      - {name} ({file_path}:{line})");
+                                            }
+                                        }
+                                    }
+                                }
+                                // Outgoing calls
+                                if let Some(outgoing) =
+                                    ch.get("outgoing_calls").and_then(|v| v.as_array())
+                                {
+                                    if !outgoing.is_empty() {
+                                        println!("    {}", "Outgoing Calls:".bold());
+                                        for call in outgoing {
+                                            if let Some(call_obj) = call.as_object() {
+                                                let name = call_obj
+                                                    .get("name")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("unknown");
+                                                let file_path = call_obj
+                                                    .get("file_path")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("");
+                                                let line = call_obj
+                                                    .get("line")
+                                                    .and_then(|v| v.as_u64())
+                                                    .unwrap_or(0);
+                                                let file_path = file_path
+                                                    .strip_prefix("file://")
+                                                    .unwrap_or(file_path);
+                                                println!("      - {name} ({file_path}:{line})");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let Some(refs_count) =
+                                sobj.get("references_count").and_then(|v| v.as_u64())
+                            {
+                                if refs_count > 0 {
+                                    println!("    {}: {}", "References".bold(), refs_count);
+                                }
+                            }
+
+                            // Small gap between symbols
+                            println!();
+                        }
+                    }
+                } else {
+                    // Single-symbol legacy shape (backward compatible)
+                    println!("{}", "LSP Information:".bold().blue());
+
+                    // Display call hierarchy if available
+                    if let Some(call_hierarchy) =
+                        obj.get("call_hierarchy").and_then(|v| v.as_object())
+                    {
+                        // Incoming calls
+                        if let Some(incoming) = call_hierarchy
+                            .get("incoming_calls")
+                            .and_then(|v| v.as_array())
+                        {
+                            if !incoming.is_empty() {
+                                println!("  {}", "Incoming Calls:".bold());
+                                for call in incoming {
+                                    if let Some(call_obj) = call.as_object() {
+                                        let name = call_obj
+                                            .get("name")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown");
+                                        let file_path = call_obj
+                                            .get("file_path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let line = call_obj
+                                            .get("line")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let file_path =
+                                            file_path.strip_prefix("file://").unwrap_or(file_path);
+                                        println!("    - {name} ({file_path}:{line})");
+                                    }
+                                }
+                            }
+                        }
+
+                        // Outgoing calls
+                        if let Some(outgoing) = call_hierarchy
+                            .get("outgoing_calls")
+                            .and_then(|v| v.as_array())
+                        {
+                            if !outgoing.is_empty() {
+                                println!("  {}", "Outgoing Calls:".bold());
+                                for call in outgoing {
+                                    if let Some(call_obj) = call.as_object() {
+                                        let name = call_obj
+                                            .get("name")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown");
+                                        let file_path = call_obj
+                                            .get("file_path")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let line = call_obj
+                                            .get("line")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let file_path =
+                                            file_path.strip_prefix("file://").unwrap_or(file_path);
+                                        println!("    - {name} ({file_path}:{line})");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Display references count if available
+                    if let Some(refs_count) = obj.get("references_count").and_then(|v| v.as_u64()) {
+                        if refs_count > 0 {
+                            println!("  {}: {}", "References".bold(), refs_count);
+                        }
+                    }
+                }
+
+                println!();
+            }
+        }
+
         // Print a separator between results
         if index < results.len() - 1 {
             println!();
@@ -512,23 +908,40 @@ fn format_and_print_json_results(results: &[&SearchResult]) -> Result<()> {
         file_total_matches: Option<usize>,
         block_unique_terms: Option<usize>,
         block_total_matches: Option<usize>,
+        lsp_info: Option<&'a serde_json::Value>,
     }
 
     let json_results: Vec<JsonResult> = results
         .iter()
-        .map(|r| JsonResult {
-            file: &r.file,
-            lines: [r.lines.0, r.lines.1],
-            node_type: &r.node_type,
-            code: &r.code,
-            matched_keywords: r.matched_keywords.as_ref(),
-            score: r.score,
-            tfidf_score: r.tfidf_score,
-            bm25_score: r.bm25_score,
-            file_unique_terms: r.file_unique_terms,
-            file_total_matches: r.file_total_matches,
-            block_unique_terms: r.block_unique_terms,
-            block_total_matches: r.block_total_matches,
+        .map(|r| {
+            if std::env::var("PROBE_DEBUG").is_ok() {
+                if r.lsp_info.is_some() {
+                    eprintln!(
+                        "DEBUG format_json: Result has LSP info for file {} at lines {:?}",
+                        r.file, r.lines
+                    );
+                } else {
+                    eprintln!(
+                        "DEBUG format_json: Result has NO LSP info for file {} at lines {:?}",
+                        r.file, r.lines
+                    );
+                }
+            }
+            JsonResult {
+                file: &r.file,
+                lines: [r.lines.0, r.lines.1],
+                node_type: &r.node_type,
+                code: &r.code,
+                matched_keywords: r.matched_keywords.as_ref(),
+                score: r.score,
+                tfidf_score: r.tfidf_score,
+                bm25_score: r.bm25_score,
+                file_unique_terms: r.file_unique_terms,
+                file_total_matches: r.file_total_matches,
+                block_unique_terms: r.block_unique_terms,
+                block_total_matches: r.block_total_matches,
+                lsp_info: r.lsp_info.as_ref(),
+            }
         })
         .collect();
 

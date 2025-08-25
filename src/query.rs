@@ -234,7 +234,7 @@ pub fn perform_query(options: &QueryOptions) -> Result<Vec<AstMatch>> {
     let resolved_path = if let Some(path_str) = options.path.to_str() {
         match resolve_path(path_str) {
             Ok(resolved_path) => {
-                if std::env::var("DEBUG").unwrap_or_default() == "1" {
+                if std::env::var("PROBE_DEBUG").unwrap_or_default() == "1" {
                     println!(
                         "DEBUG: Resolved path '{}' to '{}'",
                         path_str,
@@ -244,7 +244,7 @@ pub fn perform_query(options: &QueryOptions) -> Result<Vec<AstMatch>> {
                 resolved_path
             }
             Err(err) => {
-                if std::env::var("DEBUG").unwrap_or_default() == "1" {
+                if std::env::var("PROBE_DEBUG").unwrap_or_default() == "1" {
                     println!("DEBUG: Failed to resolve path '{path_str}': {err}");
                 }
                 // Fall back to the original path

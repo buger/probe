@@ -1,9 +1,11 @@
 # Target-specific overrides for Windows MSVC
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static", "-C", "link-args=/DEBUG:NONE /NOLOGO"]
+# Increase stack size to 8MB to prevent stack overflow in CI environments with junction points
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-args=/DEBUG:NONE /NOLOGO /STACK:8388608"]
 
 [target.i686-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static", "-C", "link-args=/DEBUG:NONE /NOLOGO"]
+# Increase stack size to 8MB to prevent stack overflow in CI environments with junction points
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-args=/DEBUG:NONE /NOLOGO /STACK:8388608"]
 
 # Configuration for Windows builds
 [target.'cfg(target_os = "windows")']

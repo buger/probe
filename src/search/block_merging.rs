@@ -1,5 +1,6 @@
 use probe_code::models::SearchResult;
-use std::collections::BTreeMap;
+use serde_json::{json, Map, Value};
+use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -19,7 +20,7 @@ pub fn merge_ranked_blocks(
     results: Vec<SearchResult>,
     threshold: Option<usize>,
 ) -> Vec<SearchResult> {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
     let threshold = threshold.unwrap_or(5); // Default to 5 lines if not specified
 
     if results.is_empty() {
@@ -113,6 +114,9 @@ pub fn merge_ranked_blocks(
                         // Merge the blocks
                         let merged_start = current_block.lines.0.min(next_block.lines.0);
                         let merged_end = current_block.lines.1.max(next_block.lines.1);
+                        // Capture original ranges *before* mutating current_block
+                        let current_range = current_block.lines;
+                        let next_range = next_block.lines;
                         let merged_code = merge_block_content(&current_block, next_block);
 
                         // Use node type from the highest-ranked block
@@ -131,13 +135,23 @@ pub fn merge_ranked_blocks(
                         // Update the current block
                         current_block.lines = (merged_start, merged_end);
                         current_block.code = merged_code;
-                        current_block.node_type = merged_node_type;
+                        current_block.node_type = merged_node_type.clone();
                         current_block.score = merged_score.0;
                         current_block.tfidf_score = merged_score.1;
                         current_block.bm25_score = merged_score.2;
                         current_block.new_score = merged_score.3;
                         current_block.block_unique_terms = merged_term_stats.0;
                         current_block.block_total_matches = merged_term_stats.1;
+
+                        // Merge LSP information (preserve per-symbol data)
+                        current_block.lsp_info = merge_lsp_info(
+                            current_block.lsp_info.take(),
+                            next_block.lsp_info.clone(),
+                            current_range,
+                            next_range,
+                            &current_block.node_type,
+                            &next_block.node_type,
+                        );
 
                         // Mark this block as processed
                         processed_indices.insert(j);
@@ -176,7 +190,7 @@ pub fn merge_ranked_blocks(
 /// # Returns
 /// `true` if blocks should be merged, `false` otherwise
 pub fn should_merge_blocks(block1: &SearchResult, block2: &SearchResult, threshold: usize) -> bool {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Check if both blocks have parent_file_id, and if they match
     if let (Some(file_id1), Some(file_id2)) = (&block1.parent_file_id, &block2.parent_file_id) {
@@ -296,7 +310,7 @@ fn merge_block_content(block1: &SearchResult, block2: &SearchResult) -> String {
     // Build the merged content from the line map
     let mut merged_lines = Vec::new();
     let mut current_line = merged_start;
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Try to open the file to fill small gaps
     let file_path = Path::new(&block1.file);
@@ -480,4 +494,318 @@ fn merge_term_statistics(
     };
 
     (unique_terms, total_matches)
+}
+
+/// Merge two LSP JSON blobs into a single JSON value.
+/// Rules:
+/// - If only one side is Some, return it unchanged (keeps single-object shape).
+/// - If both are Some, normalize to `{ merged: true, symbols: [ ... ] }`.
+fn merge_lsp_info(
+    left: Option<Value>,
+    right: Option<Value>,
+    left_lines: (usize, usize),
+    right_lines: (usize, usize),
+    left_node_type: &str,
+    right_node_type: &str,
+) -> Option<Value> {
+    match (left, right) {
+        (None, None) => None,
+        (Some(l), None) => Some(l),
+        (None, Some(r)) => Some(r),
+        (Some(l), Some(r)) => {
+            let mut symbols = Vec::new();
+            symbols.extend(normalize_symbols(&l, left_lines, left_node_type));
+            symbols.extend(normalize_symbols(&r, right_lines, right_node_type));
+
+            // Dedup symbols by (symbol, range)
+            let mut seen = HashSet::<(String, u64, u64)>::new();
+            symbols.retain(|s| {
+                if let Some(o) = s.as_object() {
+                    let name = o
+                        .get("symbol")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let (start, end) = extract_lines_from_symbol(o).unwrap_or((0, 0));
+                    seen.insert((name, start as u64, end as u64))
+                } else {
+                    true
+                }
+            });
+
+            // Dedup calls within each symbol
+            for s in symbols.iter_mut() {
+                if let Some(obj) = s.as_object_mut() {
+                    if let Some(ch) = obj
+                        .get_mut("call_hierarchy")
+                        .and_then(|v| v.as_object_mut())
+                    {
+                        dedup_calls_array(ch, "incoming_calls");
+                        dedup_calls_array(ch, "outgoing_calls");
+                    }
+                }
+            }
+
+            Some(json!({ "merged": true, "symbols": symbols }))
+        }
+    }
+}
+
+fn normalize_symbols(v: &Value, lines: (usize, usize), node_type: &str) -> Vec<Value> {
+    if let Some(obj) = v.as_object() {
+        // Already merged shape
+        if let Some(arr) = obj.get("symbols").and_then(|s| s.as_array()) {
+            return arr
+                .iter()
+                .map(|sym| {
+                    let mut s = sym.clone();
+                    ensure_symbol_range_and_type(&mut s, lines, node_type);
+                    s
+                })
+                .collect();
+        }
+
+        // Single-symbol shape -> wrap into a symbol object
+        let mut sym = Map::new();
+        if let Some(symbol) = obj.get("symbol").cloned() {
+            sym.insert("symbol".to_string(), symbol);
+        } else {
+            sym.insert("symbol".to_string(), Value::String("unknown".to_string()));
+        }
+        if let Some(ch) = obj.get("call_hierarchy").cloned() {
+            sym.insert("call_hierarchy".to_string(), ch);
+        }
+        if let Some(rc) = obj.get("references_count").cloned() {
+            sym.insert("references_count".to_string(), rc);
+        }
+        sym.insert(
+            "node_type".to_string(),
+            Value::String(node_type.to_string()),
+        );
+        sym.insert("range".to_string(), json!({ "lines": [lines.0, lines.1] }));
+        return vec![Value::Object(sym)];
+    }
+    Vec::new()
+}
+
+fn ensure_symbol_range_and_type(sym: &mut Value, lines: (usize, usize), node_type: &str) {
+    if let Some(map) = sym.as_object_mut() {
+        if !map.contains_key("range") {
+            map.insert("range".to_string(), json!({ "lines": [lines.0, lines.1] }));
+        }
+        if !map.contains_key("node_type") {
+            map.insert(
+                "node_type".to_string(),
+                Value::String(node_type.to_string()),
+            );
+        }
+    }
+}
+
+fn extract_lines_from_symbol(obj: &Map<String, Value>) -> Option<(usize, usize)> {
+    let arr = obj.get("range")?.get("lines")?.as_array()?;
+    if arr.len() == 2 {
+        let start = arr[0].as_u64()? as usize;
+        let end = arr[1].as_u64()? as usize;
+        Some((start, end))
+    } else {
+        None
+    }
+}
+
+fn dedup_calls_array(parent: &mut Map<String, Value>, key: &str) {
+    if let Some(arr) = parent.get_mut(key).and_then(|v| v.as_array_mut()) {
+        let mut seen = HashSet::<(String, String, u64)>::new();
+        let mut out = Vec::with_capacity(arr.len());
+        for c in arr.drain(..) {
+            if let Some(co) = c.as_object() {
+                let name = co
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let path = co
+                    .get("file_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let line = co.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
+                if seen.insert((name, path, line)) {
+                    out.push(Value::Object(co.clone()));
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        *arr = out;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_merge_lsp_info_both_none() {
+        let result = merge_lsp_info(None, None, (1, 5), (6, 10), "function", "function");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_merge_lsp_info_left_only() {
+        let left = Some(json!({
+            "symbol": "foo",
+            "call_hierarchy": {
+                "incoming_calls": [{"name": "bar", "line": 10}],
+                "outgoing_calls": []
+            }
+        }));
+
+        let result = merge_lsp_info(left.clone(), None, (1, 5), (6, 10), "function", "function");
+        assert_eq!(result, left);
+    }
+
+    #[test]
+    fn test_merge_lsp_info_right_only() {
+        let right = Some(json!({
+            "symbol": "baz",
+            "call_hierarchy": {
+                "incoming_calls": [],
+                "outgoing_calls": [{"name": "qux", "line": 20}]
+            }
+        }));
+
+        let result = merge_lsp_info(None, right.clone(), (1, 5), (6, 10), "function", "function");
+        assert_eq!(result, right);
+    }
+
+    #[test]
+    fn test_merge_lsp_info_both_present() {
+        let left = Some(json!({
+            "symbol": "foo",
+            "call_hierarchy": {
+                "incoming_calls": [
+                    {"name": "caller1", "file_path": "file1.rs", "line": 10}
+                ],
+                "outgoing_calls": []
+            },
+            "references_count": 5
+        }));
+
+        let right = Some(json!({
+            "symbol": "bar",
+            "call_hierarchy": {
+                "incoming_calls": [
+                    {"name": "caller2", "file_path": "file2.rs", "line": 20}
+                ],
+                "outgoing_calls": [
+                    {"name": "callee1", "file_path": "file3.rs", "line": 30}
+                ]
+            },
+            "references_count": 3
+        }));
+
+        let result = merge_lsp_info(
+            left,
+            right,
+            (1, 5),
+            (6, 10),
+            "function_declaration",
+            "function_declaration",
+        );
+
+        assert!(result.is_some());
+        let result_json = result.unwrap();
+
+        // Check merged structure
+        assert_eq!(result_json["merged"], true);
+        assert!(result_json["symbols"].is_array());
+
+        let symbols = result_json["symbols"].as_array().unwrap();
+        assert_eq!(symbols.len(), 2);
+
+        // Check first symbol
+        assert_eq!(symbols[0]["symbol"], "foo");
+        assert_eq!(symbols[0]["node_type"], "function_declaration");
+        assert_eq!(symbols[0]["range"]["lines"], json!([1, 5]));
+
+        // Check second symbol
+        assert_eq!(symbols[1]["symbol"], "bar");
+        assert_eq!(symbols[1]["node_type"], "function_declaration");
+        assert_eq!(symbols[1]["range"]["lines"], json!([6, 10]));
+    }
+
+    #[test]
+    fn test_merge_lsp_info_deduplicates_calls() {
+        let left = Some(json!({
+            "symbol": "foo",
+            "call_hierarchy": {
+                "incoming_calls": [
+                    {"name": "caller1", "file_path": "file1.rs", "line": 10},
+                    {"name": "caller1", "file_path": "file1.rs", "line": 10} // Duplicate
+                ],
+                "outgoing_calls": []
+            }
+        }));
+
+        let right = Some(json!({
+            "symbol": "bar",
+            "call_hierarchy": {
+                "incoming_calls": [
+                    {"name": "caller1", "file_path": "file1.rs", "line": 10} // Same as left
+                ],
+                "outgoing_calls": []
+            }
+        }));
+
+        let result = merge_lsp_info(left, right, (1, 5), (6, 10), "function", "function");
+        assert!(result.is_some());
+
+        let result_json = result.unwrap();
+        let symbols = result_json["symbols"].as_array().unwrap();
+
+        // First symbol should have deduplicated calls
+        let first_incoming = symbols[0]["call_hierarchy"]["incoming_calls"]
+            .as_array()
+            .unwrap();
+        assert_eq!(first_incoming.len(), 1); // Deduplicated from 2 to 1
+
+        // Second symbol keeps its own calls
+        let second_incoming = symbols[1]["call_hierarchy"]["incoming_calls"]
+            .as_array()
+            .unwrap();
+        assert_eq!(second_incoming.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_lsp_info_already_merged() {
+        let left = Some(json!({
+            "merged": true,
+            "symbols": [
+                {
+                    "symbol": "foo",
+                    "call_hierarchy": {"incoming_calls": [], "outgoing_calls": []},
+                    "node_type": "function",
+                    "range": {"lines": [1, 5]}
+                }
+            ]
+        }));
+
+        let right = Some(json!({
+            "symbol": "bar",
+            "call_hierarchy": {"incoming_calls": [], "outgoing_calls": []}
+        }));
+
+        let result = merge_lsp_info(left, right, (1, 10), (11, 15), "function", "function");
+        assert!(result.is_some());
+
+        let result_json = result.unwrap();
+        assert_eq!(result_json["merged"], true);
+
+        let symbols = result_json["symbols"].as_array().unwrap();
+        assert_eq!(symbols.len(), 2); // Should have both foo and bar
+        assert_eq!(symbols[0]["symbol"], "foo");
+        assert_eq!(symbols[1]["symbol"], "bar");
+    }
 }

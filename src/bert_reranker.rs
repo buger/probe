@@ -34,7 +34,7 @@ pub struct BertReranker {
 #[cfg(feature = "bert-reranker")]
 impl BertReranker {
     pub async fn new(model_name: &str) -> Result<Self> {
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
         if debug_mode {
             println!("DEBUG: Loading BERT model: {model_name}");
@@ -281,7 +281,7 @@ impl BertReranker {
         } else {
             // If tokenizer doesn't provide type IDs, we might have an issue
             // Log a warning in debug mode
-            let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+            let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
             if debug_mode {
                 println!("WARNING: Tokenizer did not generate token type IDs. This may affect model performance.");
             }
@@ -308,7 +308,7 @@ impl BertReranker {
         let score = raw_score;
 
         // Debug: Log raw score
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
         if debug_mode {
             println!(
                 "DEBUG: Raw BERT score for query '{}' (first 50 chars): {:.6}",
@@ -401,7 +401,7 @@ pub async fn rerank_with_bert(
     }
 
     // Debug: Show scores before sorting
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
     if debug_mode {
         println!("\nDEBUG: BERT scores before sorting:");
         for (i, result) in results.iter().enumerate() {
@@ -491,7 +491,7 @@ impl ParallelBertReranker {
                 .min(8) // Cap at 8 threads
         });
 
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
         if debug_mode {
             println!("DEBUG: Creating parallel BERT reranker with {num_threads} engines");
@@ -522,7 +522,7 @@ impl ParallelBertReranker {
         use std::sync::Arc;
         use std::time::{Duration, Instant};
 
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
         let total_docs = documents.len();
 
         if debug_mode {

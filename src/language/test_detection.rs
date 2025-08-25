@@ -2,7 +2,7 @@ use std::path::Path;
 
 /// Function to determine if a file is a test file based on common naming conventions and directory patterns
 pub fn is_test_file(path: &Path) -> bool {
-    let _debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let _debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Check file name patterns
     if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {

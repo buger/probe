@@ -66,7 +66,7 @@ impl SessionCache {
 
     /// Load a session cache from disk and validate file MD5 hashes
     pub fn load(session_id: &str, query_hash: &str) -> Result<Self> {
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
         let cache_path = Self::get_cache_path(session_id, query_hash);
 
         // If the cache file doesn't exist, create a new empty cache
@@ -127,7 +127,7 @@ impl SessionCache {
 
     /// Save the session cache to disk
     pub fn save(&self) -> Result<()> {
-        let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+        let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
         let cache_path = Self::get_cache_path(&self.session_id, &self.query_hash);
 
         if debug_mode {
@@ -321,7 +321,7 @@ pub fn filter_results_with_cache(
     query: &str,
 ) -> Result<(Vec<SearchResult>, usize)> {
     let query_hash = hash_query(query);
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Check if this is a new session by looking for the cache file
     let cache_path = SessionCache::get_cache_path(session_id, &query_hash);
@@ -397,7 +397,7 @@ pub fn filter_matched_lines_with_cache(
     query: &str,
 ) -> Result<usize> {
     let query_hash = hash_query(query);
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Check if this is a new session by looking for the cache file
     let cache_path = SessionCache::get_cache_path(session_id, &query_hash);
@@ -542,7 +542,7 @@ pub fn filter_matched_lines_with_cache(
 
 /// Add search results to the cache
 pub fn add_results_to_cache(results: &[SearchResult], session_id: &str, query: &str) -> Result<()> {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
     let query_hash = hash_query(query);
 
     // Load or create the cache
@@ -606,7 +606,7 @@ pub fn add_results_to_cache(results: &[SearchResult], session_id: &str, query: &
 
 /// Debug function to print cache contents (only used when DEBUG=1)
 pub fn debug_print_cache(session_id: &str, query: &str) -> Result<()> {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
     if !debug_mode {
         return Ok(());
     }
@@ -635,7 +635,7 @@ pub fn debug_print_cache(session_id: &str, query: &str) -> Result<()> {
 /// Generate a unique 4-character alphanumeric session ID
 /// Returns a tuple of (session_id, is_new) where is_new indicates if this is a newly generated ID
 pub fn generate_session_id() -> Result<(&'static str, bool)> {
-    let debug_mode = std::env::var("DEBUG").unwrap_or_default() == "1";
+    let debug_mode = std::env::var("PROBE_DEBUG").unwrap_or_default() == "1";
 
     // Generate a single session ID instead of looping
     if (0..10).next().is_some() {
@@ -731,6 +731,7 @@ mod tests {
             block_id: None,
             matched_keywords: None,
             tokenized_content: None,
+            lsp_info: None,
         };
 
         let result2 = SearchResult {
@@ -757,6 +758,7 @@ mod tests {
             block_id: None,
             matched_keywords: None,
             tokenized_content: None,
+            lsp_info: None,
         };
 
         // Generate cache keys for both results

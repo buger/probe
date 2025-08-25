@@ -87,16 +87,17 @@ impl RustPathResolver {
     /// Finds a crate in the Cargo registry cache.
     fn find_in_registry_cache(&self, crate_name: &str) -> Result<PathBuf, String> {
         // Get the cargo home directory
-        let cargo_home = std::env::var("CARGO_HOME")
-            .or_else(|_| {
-                let home = std::env::var("HOME")
-                    .map_err(|e| format!("Failed to get HOME environment variable: {e}"))?;
-                Ok::<String, String>(format!("{home}/.cargo"))
-            })
-            .map_err(|e| format!("Failed to determine CARGO_HOME: {e}"))?;
+        let cargo_home = if let Ok(cargo_home) = std::env::var("CARGO_HOME") {
+            PathBuf::from(cargo_home)
+        } else {
+            // Use dirs crate for cross-platform home directory support
+            let home_dir =
+                dirs::home_dir().ok_or_else(|| "Failed to determine home directory".to_string())?;
+            home_dir.join(".cargo")
+        };
 
         // The registry cache is in $CARGO_HOME/registry/src
-        let registry_dir = PathBuf::from(cargo_home).join("registry").join("src");
+        let registry_dir = cargo_home.join("registry").join("src");
 
         if !registry_dir.exists() {
             return Err(format!(
@@ -260,7 +261,11 @@ edition = "2021"
         let resolver = RustPathResolver::new();
 
         // Get the name of the current crate from Cargo.toml
-        let cargo_toml = std::fs::read_to_string("Cargo.toml").expect("Failed to read Cargo.toml");
+        // Use CARGO_MANIFEST_DIR to ensure we find the correct Cargo.toml regardless of working directory
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let cargo_toml_path = std::path::Path::new(manifest_dir).join("Cargo.toml");
+        let cargo_toml = std::fs::read_to_string(&cargo_toml_path)
+            .unwrap_or_else(|e| panic!("Failed to read Cargo.toml at {cargo_toml_path:?}: {e}"));
 
         // Extract the package name using a simple regex
         let re = regex::Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap();

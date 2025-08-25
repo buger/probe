@@ -17,7 +17,8 @@ const EXTRACT_FLAG_MAP = {
 	allowTests: '--allow-tests',
 	contextLines: '--context',
 	format: '--format',
-	inputFile: '--input-file'
+	inputFile: '--input-file',
+	lsp: '--lsp'
 };
 
 /**
@@ -29,6 +30,7 @@ const EXTRACT_FLAG_MAP = {
  * @param {boolean} [options.allowTests] - Include test files
  * @param {number} [options.contextLines] - Number of context lines to include
  * @param {string} [options.format] - Output format ('markdown', 'plain', 'json')
+ * @param {boolean} [options.lsp] - Use LSP (Language Server Protocol) for call hierarchy and reference graphs
  * @param {Object} [options.binaryOptions] - Options for getting the binary
  * @param {boolean} [options.binaryOptions.forceDownload] - Force download even if binary exists
  * @param {string} [options.binaryOptions.version] - Specific version to download
